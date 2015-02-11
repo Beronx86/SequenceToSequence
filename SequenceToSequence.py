@@ -4,6 +4,11 @@
 #  input activations <--> output errors
 # output activations <--> input errors
 # embedding phrase & language model phrase
+# in means input sequence, out means target sequence which is also used as input
+# in language model phrase
+# in words are embedding phrase inputs, output words are language model phrase
+# inputs
+# some code are redundant for clarity
 
 import numpy as np
 import math
@@ -232,10 +237,14 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
                                  W_phi_y.T[layer_size: layer_size + input_size].dot(Dl_phi) +
                                  W.T[layer_size: layer_size + input_size].dot(Dl) +
                                  W_eta_y.T[layer_size: layer_size + input_size].dot(Dl_eta))
-    return (Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_phi_s,
+    return ([Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_phi_s],
             lower_input_errors, [Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu])
 
 
+# Direct input version, more time consuming in matrix multiplication
+# Modify LSTM_feed_forward, this can be avoided. But in such condition, the
+# feed_forward function of the first LSTM layer is inconsistent with other
+# layers. Add a switch to indicate first layer LSTM.
 # Word-embedding version
 def Input_feed_forward(W_we, word_idx_seq):
     """Transfer word_idx_seq to word_embedding_seq. The weights from
@@ -251,12 +260,18 @@ def Input_feed_forward(W_we, word_idx_seq):
     return we_seq
 
 
-# Direct input version, more time consuming in matrix multiplication
-# Modify LSTM_feed_forward, this can be avoided. But in such condition, the
-# feed_forward function of the first LSTM layer is inconsistent with other
-# layers. Add a switch to indicate first layer LSTM.
-def Input_feed_forward(word_idx_seq):
-    None
+def Input_feed_backward(W_we, input_errors, word_idx_seq):
+    """
+
+    :param W_we:
+    :param input_errors:
+    :param word_idx_seq:
+    :return:
+    """
+    Dg_we = np.zeros(W_we.shape, dtype=real)
+    for word_idx in word_idx_seq:
+        Dg_we[:, word_idx] += input_errors
+    return Dg_we
 
 
 def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
@@ -375,3 +390,91 @@ def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
                                  size=(layer_size, joint_size)), dtype=real)
     params["W_o"] = W_o
     return params
+
+
+def Feed_forward_backward(in_word_idx_seq, out_word_idx_seq,
+                          target_word_idx_seq, params):
+    """
+    :param in_word_idx_seq:
+    :param out_word_idx_seq: start form <EOS>, end with last word
+    :param target_word_idx_seq: start form first word, end with <EOS>
+    :param params:
+    :return a dict of grads
+            sent_log_loss
+    """
+    inter_vals = dict()
+    grads = dict()
+    # Word embedding layers feed forward
+    em_lower_output_acts = Input_feed_forward(params["W_we_in"], in_word_idx_seq)
+    lm_lower_output_acts = Input_feed_forward(params["W_we_out"], out_word_idx_seq)
+    # LSTM layers feed forward
+    for i in range(params["num_layers"]):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        lm_layer_name = "lm_LSTM_layer_" + str(i)
+        em_weights = params[em_layer_name]
+        lm_weights = params[lm_layer_name]
+        # Feed forward embedding layer
+        em_layer_ret = LSTM_feed_forward(em_weights, em_lower_output_acts)
+        # Get lm initial hidden activations and states
+        em_output_acts = em_layer_ret[0]
+        em_states = em_layer_ret[1]
+        lm_init = [em_output_acts[-1], em_states[-1]]
+        # Feed forward lm layer, start form init activations and states
+        lm_layer_ret = LSTM_feed_forward(lm_weights, lm_lower_output_acts, lm_init)
+        # Save the intermediate values for feed backward
+        inter_vals[em_layer_name] = em_layer_ret
+        inter_vals[lm_layer_name] = lm_layer_ret
+        # Loop variant assignment
+        em_lower_output_acts = em_layer_ret[0]
+        lm_lower_output_acts = lm_layer_ret[0]
+    # Softmax layers feed forward and backward
+    softmax_lower_output_acts = lm_lower_output_acts
+    softmax_ret = Softmax_feed_fordward_backward(params["W_o"],
+                                                 softmax_lower_output_acts, target_word_idx_seq)
+    grads["W_o"] = softmax_ret[0]
+    sent_log_loss = softmax_ret[2]
+    # Feed back LSTM layers
+    lm_input_errors = softmax_ret[1]
+    em_input_errors = 0
+    for i in reversed(range(params["num_layers"])):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        lm_layer_name = "lm_LSTM_layer_" + str(i)
+        em_weights = params[em_layer_name]
+        lm_weights = params[lm_layer_name]
+        em_inter_vals = inter_vals[em_layer_name]
+        lm_inter_vals = inter_vals[lm_layer_name]
+        # Feed back language layer
+        lm_layer_ret = LSTM_feed_backward(lm_weights, lm_inter_vals, lm_input_errors)
+        # Get the future error for embedding layer
+        em_final = lm_layer_ret[2]
+        # Feed back em layer
+        em_layer_ret = LSTM_feed_backward(em_weights, em_inter_vals,
+                                          em_input_errors, em_final)
+        # Save the gradients
+        grads[em_layer_name] = em_layer_ret[0]
+        grads[lm_layer_name] = lm_layer_ret[0]
+        # Loop variable assignment
+        em_input_errors = em_layer_ret[1]
+        lm_input_errors = lm_layer_ret[1]
+    # Feed back in and out word embedding
+    in_we_errors = em_input_errors
+    out_we_errors = lm_input_errors
+    grads["W_we_in"] = Input_feed_backward(params["W_we_in"],
+                                           in_we_errors, in_word_idx_seq)
+    grads["W_we_out"] = Input_feed_backward(params["W_we_out"],
+                                            out_we_errors, out_word_idx_seq)
+
+    return grads, sent_log_loss
+
+
+# learn_rate strategy exists in a outer loop
+# error clip strategy is include in this function
+def SGD(params, grads, learn_rate=0.7, clip_grad=True):
+    """Change the weights
+    :param params:
+    :param grads:
+    :param learn_rate:
+    :param clip_grad:
+    :return None
+    """
+    None
