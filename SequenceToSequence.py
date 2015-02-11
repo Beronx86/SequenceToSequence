@@ -259,51 +259,6 @@ def Input_feed_forward(word_idx_seq):
     None
 
 
-def Softmax_feed_forward(W_o, lower_output_acts):
-    """
-    :param W_o:
-    :param lower_output_acts:
-    :return softmax_outputs: used for calculate log_loss and error back
-    propagation
-    """
-    # Calculate the emission
-    time_steps = lower_output_acts.shap[0]
-    layer_size = W_o.shape[0]
-    input_size = W_o.shape[1]
-    X_o, Y_o = range(time_steps), range(time_steps)
-    for t in range(time_steps):
-        X_o[t] = W_o.dot(lower_output_acts[t])
-        Y_o[t] = softmax(X_o[t])
-    return Y_o
-
-
-def Softmax_feed_back(W_o, inter_vals, targets_idx):
-    """
-    :param W_o:
-    :param inter_vals: [softmax_outputs, lower_output_acts]
-           softmax_outputs is used to calculate the softmax derivative,
-           lower_output_acts is used to calculate the W_o derivateve
-    :param targets_idx:
-    :return Dg_o
-            lower_input_error
-            sent_log_loss
-    """
-    time_steps = len(targets_idx)
-    layer_size = W_o.shape[0]
-    input_size = W_o.shape[1]
-    sent_log_loss = 0
-    Y_o, Y = inter_vals
-    lower_input_errors = range(time_steps)
-    Dg_o = np.zeros((layer_size, input_size), dtype=real)
-    for t in reversed(range(time_steps)):
-        sent_log_loss += math.log(max(Y_o[t][targets_idx[t]], 1e-20))
-        Dl_o = Y_o[t] * -1
-        Dl_o[targets_idx[t]] += 1
-        Dg_o += Dl_o.dot(Y[t].T)
-        lower_input_errors[t] = W_o.T.dot(Dl_o)
-    return Dg_o, lower_input_errors, sent_log_loss
-
-
 def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
     """
     :param W_o:
