@@ -42,7 +42,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
 
        :param weights:
                A list of matrix [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W,
-                                  W_eta_y, W_eta_s, W_o]
+                                  W_eta_y, W_eta_s]
                The last column of Weight matrix is bias. So input vectors need
                to append 1.
                input --> gate/cell are weights from the lower layer to this
@@ -76,7 +76,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
                 [output_acts[-1], states[-1]] is the next phrase init
                 Others are used for feed backward
     """
-    W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s, W_o = weights
+    W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
     layer_size = W.shape[0]
     time_steps = lower_output_acts.shape[0]
     input_size = lower_output_acts.shape[1]
@@ -127,7 +127,7 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
        between two layers. Specifically this layer feed back to the lower layer.
        :param weights:
                A list of matrix [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W,
-                                  W_eta_y, W_eta_s, W_o]
+                                  W_eta_y, W_eta_s]
                The last column of Weight matrix is bias. So input vectors need
                to append 1.
                input --> gate/cell are weights form the lower layer to this
@@ -170,7 +170,7 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
                prev_final: used to pass training variable from language model
                phrase to embedding phrase
     """
-    W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s, W_o = weights
+    W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
     Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I = inter_vars
     layer_size = W.shape[0]
     time_steps = I.shape[0]
@@ -264,7 +264,9 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
     :param W_o:
     :param lower_output_acts:
     :param target_idx_seq:
-    :return:
+    :return Dg_o
+            lower_input_errors
+            sent_log_loss
     """
     time_steps = lower_output_acts.shape[0]
     layer_size = W_o.shape[0]
@@ -276,17 +278,100 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
     X_o, Y_o = range(time_steps), range(time_steps)
     for t in range(time_steps):
         # Calculate the emission
-        Y[t][:layer_size] = lower_output_acts[t]
+        Y[t][:input_size] = lower_output_acts[t]
         Y[t][-1] = 1    # 1 for Bias
         X_o[t] = W_o.dot(Y[t])
         Y_o[t] = softmax(X_o[t])
-        sent_log_loss += math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+        # sent_log_loss = - sent_log_probability
+        sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
     # Softmax feed backward
     lower_input_errors = range(time_steps)
     Dg_o = np.zeros((layer_size, joint_size), dtype=real)
     for t in reversed(range(time_steps)):
-        Dl_o = Y_o[t] * -1
-        Dl_o[target_idx_seq[t]] += 1
+        # A little different from Neubig's code
+        Dl_o = Y_o[t]
+        Dl_o[target_idx_seq[t]] -= 1
         Dg_o += Dl_o.dot(Y[t].T)
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
     return Dg_o, lower_input_errors, sent_log_loss
+
+
+def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
+                  lstm_range=0.08, embedding_range=0.1, softmax_range=0.1):
+    """This version must contain a word_embedding layer
+    :param hidden_size_list: one value for each LSTM layer
+    :param we_size: the word_embedding layer size.
+    :param in_vocab_size: used to define the word_embedding matrix
+    :param out_vocab_size: default is 0. If it is 0, the input vocab and output
+           vocab are the same vocab, and the word_embedding matrix is also the
+           same
+    :param lstm_range: initial weight range
+    :param softmax_range:
+    :param embedding_range:
+    :return A dict of weight matrix which defines the network
+    """
+    rng = np.random.RandomState(89757)
+    # All parameters are saved in a dict
+    params = dict()
+    params["num_layers"] = len(hidden_size_list)
+    # Init in_vocab_word_embedding and out_vocab_word_embedding
+    W_we_in = np.asarray(rng.uniform(low=-embedding_range, high=embedding_range,
+                                     size=(we_size, in_vocab_size)), dtype=real)
+    if out_vocab_size == 0:
+        W_we_out = W_we_in
+        out_vocab_size = in_vocab_size
+    else:
+        W_we_out = np.asarray(rng.uniform(low=-embedding_range, high=embedding_range,
+                                          size=(we_size, out_vocab_size)), dtype=real)
+    params["W_we_in"] = W_we_in
+    params["W_we_out"] = W_we_out
+    # Init sentence embedding LSTM weight matrix
+    input_size = we_size
+    for i, layer_size in enumerate(hidden_size_list):
+        layer_name = "em_LSTM_layer_" + str(i)
+        joint_size = layer_size + input_size + 1    # 1 for Bias
+        W_iota_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                          size=(layer_size, joint_size)), dtype=real)
+        W_iota_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                          size=(layer_size, 1)), dtype=real)
+        W_phi_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, joint_size)), dtype=real)
+        W_phi_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, 1)), dtype=real)
+        W = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                   size=(layer_size, joint_size)), dtype=real)
+        W_eta_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, joint_size)), dtype=real)
+        W_eta_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, 1)), dtype=real)
+        params[layer_name] = [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s]
+        input_size = layer_size
+    # Init language model LSTM weight matrix
+    input_size = we_size
+    for i, layer_size in enumerate(hidden_size_list):
+        layer_name = "lm_LSTM_layer_" + str(i)
+        joint_size = layer_size + input_size + 1    # 1 for Bias
+        W_iota_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                          size=(layer_size, joint_size)), dtype=real)
+        W_iota_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                          size=(layer_size, 1)), dtype=real)
+        W_phi_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, joint_size)), dtype=real)
+        W_phi_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, 1)), dtype=real)
+        W = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                   size=(layer_size, joint_size)), dtype=real)
+        W_eta_y = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, joint_size)), dtype=real)
+        W_eta_s = np.asarray(rng.uniform(low=-lstm_range, high=lstm_range,
+                                         size=(layer_size, 1)), dtype=real)
+        params[layer_name] = [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s]
+        input_size = layer_size
+    # Init top LSTM to softmax layer weights
+    input_size = hidden_size_list[-1]
+    layer_size = out_vocab_size
+    joint_size = input_size + 1
+    W_o = np.asarray(rng.uniform(low=-softmax_range, high=softmax_range,
+                                 size=(layer_size, joint_size)), dtype=real)
+    params["W_o"] = W_o
+    return params
