@@ -6,6 +6,7 @@
 # embedding phrase & language model phrase
 
 import numpy as np
+import math
 
 real = np.float32
 
@@ -55,7 +56,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
                W_eta_s                  state[t - 1] --> output gate
        :param lower_output_acts:
                Output activations of the lower layer.
-               It is a matrix. [T, hidden_layer_size]
+               It is a matrix. [T, lower_layer_size]
        :param init:
                [hidden output activations, states]
                The initial previous hidden output activations and
@@ -233,3 +234,104 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
                                  W_eta_y.T[layer_size: layer_size + input_size].dot(Dl_eta))
     return (Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_phi_s,
             lower_input_errors, [Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu])
+
+
+# Word-embedding version
+def Input_feed_forward(W_we, word_idx_seq):
+    """Transfer word_idx_seq to word_embedding_seq. The weights from
+    :param W_we
+    :param word_idx_seq:
+    :return word_embedding_seq:
+    """
+    time_steps = len(word_idx_seq)
+    we_dim = W_we.shape[0]
+    we_seq = np.zeros((time_steps, we_dim), dtype=real)
+    for t in range(time_steps):
+        we_seq[t] = W_we[:, word_idx_seq[t]]
+    return we_seq
+
+
+# Direct input version, more time consuming in matrix multiplication
+# Modify LSTM_feed_forward, this can be avoided. But in such condition, the
+# feed_forward function of the first LSTM layer is inconsistent with other
+# layers. Add a switch to indicate first layer LSTM.
+def Input_feed_forward(word_idx_seq):
+    None
+
+
+def Softmax_feed_forward(W_o, lower_output_acts):
+    """
+    :param W_o:
+    :param lower_output_acts:
+    :return softmax_outputs: used for calculate log_loss and error back
+    propagation
+    """
+    # Calculate the emission
+    time_steps = lower_output_acts.shap[0]
+    layer_size = W_o.shape[0]
+    input_size = W_o.shape[1]
+    X_o, Y_o = range(time_steps), range(time_steps)
+    for t in range(time_steps):
+        X_o[t] = W_o.dot(lower_output_acts[t])
+        Y_o[t] = softmax(X_o[t])
+    return Y_o
+
+
+def Softmax_feed_back(W_o, inter_vals, targets_idx):
+    """
+    :param W_o:
+    :param inter_vals: [softmax_outputs, lower_output_acts]
+           softmax_outputs is used to calculate the softmax derivative,
+           lower_output_acts is used to calculate the W_o derivateve
+    :param targets_idx:
+    :return Dg_o
+            lower_input_error
+            sent_log_loss
+    """
+    time_steps = len(targets_idx)
+    layer_size = W_o.shape[0]
+    input_size = W_o.shape[1]
+    sent_log_loss = 0
+    Y_o, Y = inter_vals
+    lower_input_errors = range(time_steps)
+    Dg_o = np.zeros((layer_size, input_size), dtype=real)
+    for t in reversed(range(time_steps)):
+        sent_log_loss += math.log(max(Y_o[t][targets_idx[t]], 1e-20))
+        Dl_o = Y_o[t] * -1
+        Dl_o[targets_idx[t]] += 1
+        Dg_o += Dl_o.dot(Y[t].T)
+        lower_input_errors[t] = W_o.T.dot(Dl_o)
+    return Dg_o, lower_input_errors, sent_log_loss
+
+
+def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
+    """
+    :param W_o:
+    :param lower_output_acts:
+    :param target_idx_seq:
+    :return:
+    """
+    time_steps = lower_output_acts.shape[0]
+    layer_size = W_o.shape[0]
+    joint_size = W_o.shape[1]
+    input_size = W_o.shape[1] - 1   # 1 for Bias
+    # Softmax feed forward
+    sent_log_loss = 0
+    Y = np.zeros((time_steps, joint_size), dtype=real)
+    X_o, Y_o = range(time_steps), range(time_steps)
+    for t in range(time_steps):
+        # Calculate the emission
+        Y[t][:layer_size] = lower_output_acts[t]
+        Y[t][-1] = 1    # 1 for Bias
+        X_o[t] = W_o.dot(Y[t])
+        Y_o[t] = softmax(X_o[t])
+        sent_log_loss += math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+    # Softmax feed backward
+    lower_input_errors = range(time_steps)
+    Dg_o = np.zeros((layer_size, joint_size), dtype=real)
+    for t in reversed(range(time_steps)):
+        Dl_o = Y_o[t] * -1
+        Dl_o[target_idx_seq[t]] += 1
+        Dg_o += Dl_o.dot(Y[t].T)
+        lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
+    return Dg_o, lower_input_errors, sent_log_loss
