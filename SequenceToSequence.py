@@ -469,12 +469,38 @@ def Feed_forward_backward(in_word_idx_seq, out_word_idx_seq,
 
 # learn_rate strategy exists in a outer loop
 # error clip strategy is include in this function
-def SGD(params, grads, learn_rate=0.7, clip_grad=True):
-    """Change the weights
-    :param params:
-    :param grads:
+def Weight_SGD(weights, gradients, learn_rate=0.7, clip_norm=0):
+    """Change the one weight matrix. Not all the matrix
+    :param weights:
+    :param gradients:
     :param learn_rate:
-    :param clip_grad:
+    :param clip_norm: if clip_norm = 0, do not clip gradients
     :return None
     """
-    None
+    if clip_norm > 0:
+        grads_norm = gradients * gradients
+        clip_idx = grads_norm > clip_norm
+        gradients[clip_idx] = clip_norm * gradients[clip_idx] / grads_norm[clip_idx]
+    weights -= learn_rate * gradients
+
+
+def All_params_SGD(params, grads, ff_learn_rate=0.7, lstm_learn_rate=0.7,
+                   lstm_clip_norm=5):
+    """
+    :param params:
+    :param grads:
+    :param ff_learn_rate: learning rate for word_embedding and softmax weights
+    :param lstm_learn_rate:
+    :param lstm_clip_norm:
+    :return:
+    """
+    Weight_SGD(params["W_o"], grads["W_o"], learn_rate=ff_learn_rate)
+    Weight_SGD(params["W_we_in"], grads["W_we_in"], learn_rate=ff_learn_rate)
+    Weight_SGD(params["W_we_out"], grads["W_we_out"], learn_rate=ff_learn_rate)
+    for i in range(params["num_layers"]):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        lm_layer_name = "lm_LSTM_layer_" + str(i)
+        Weight_SGD(params[em_layer_name], grads[em_layer_name],
+                   learn_rate=lstm_learn_rate, clip_norm=lstm_clip_norm)
+        Weight_SGD(params[lm_layer_name], grads[lm_layer_name],
+                   learn_rate=lstm_learn_rate, clip_norm=lstm_clip_norm)
