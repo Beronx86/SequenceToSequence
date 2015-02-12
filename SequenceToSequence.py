@@ -11,7 +11,10 @@
 # some code are redundant for clarity
 
 import numpy as np
+from numpy.linalg import norm
 import math
+import time
+import os
 
 real = np.float32
 
@@ -392,13 +395,13 @@ def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
     return params
 
 
-def Feed_forward_backward(in_word_idx_seq, out_word_idx_seq,
-                          target_word_idx_seq, params):
+def Feed_forward_backward(params, in_word_idx_seq, out_word_idx_seq,
+                          target_word_idx_seq):
     """
+    :param params:
     :param in_word_idx_seq:
     :param out_word_idx_seq: start form <EOS>, end with last word
     :param target_word_idx_seq: start form first word, end with <EOS>
-    :param params:
     :return a dict of grads
             sent_log_loss
     """
@@ -469,7 +472,7 @@ def Feed_forward_backward(in_word_idx_seq, out_word_idx_seq,
 
 # learn_rate strategy exists in a outer loop
 # error clip strategy is include in this function
-def Weight_SGD(weights, gradients, learn_rate=0.7, clip_norm=0):
+def Weight_SGD(weights, gradients, learn_rate=0.1, clip_norm=0):
     """Change the one weight matrix. Not all the matrix
     :param weights:
     :param gradients:
@@ -500,7 +503,133 @@ def All_params_SGD(params, grads, ff_learn_rate=0.7, lstm_learn_rate=0.7,
     for i in range(params["num_layers"]):
         em_layer_name = "em_LSTM_layer_" + str(i)
         lm_layer_name = "lm_LSTM_layer_" + str(i)
-        Weight_SGD(params[em_layer_name], grads[em_layer_name],
-                   learn_rate=lstm_learn_rate, clip_norm=lstm_clip_norm)
-        Weight_SGD(params[lm_layer_name], grads[lm_layer_name],
-                   learn_rate=lstm_learn_rate, clip_norm=lstm_clip_norm)
+        for em_weights, em_gradients in zip(params[em_layer_name], grads[em_layer_name]):
+            Weight_SGD(em_weights, em_gradients, learn_rate=lstm_learn_rate,
+                       clip_norm=lstm_clip_norm)
+        for lm_weights, lm_gradients in zip(params[lm_layer_name], grads[lm_layer_name]):
+            Weight_SGD(lm_weights, lm_gradients, learn_rate=lstm_learn_rate,
+                       clip_norm=lstm_clip_norm)
+
+
+# Did not use minibatch
+def Train(params, samples, epochs = 8, lr_decay=True):
+    """
+    :param params:
+    :param samples: every sample is a list [in_word_idx_seq, outword_word_idx_seq,
+           target_word_idx_seq], every word_idx_seq is a list of int. All samples
+           are contained in a list
+    :param epochs:
+    :param lr_decay: learn rate decay
+    :return:
+    """
+    trained_epochs = 0
+    ff_lr = 0.1
+    lstm_lr = 0.7
+    while True:
+        trained_samples = 0
+        log_loss = 0
+        trained_words = 0
+        t0 = time.time()
+        # If you want to do parallel computation. Train several samples and
+        # accumulate the grads
+        for sample in samples:
+            # Train the net
+            grads, sent_ll = Feed_forward_backward(params, sample[0], sample[1],
+                                                   sample[2])
+            All_params_SGD(params, grads, ff_learn_rate=ff_lr,
+                           lstm_learn_rate=lstm_lr, lstm_clip_norm=5)
+            log_loss += sent_ll
+            trained_words += len(sample[0]) + len(sample[1])
+            # Out put some info
+            trained_samples += 1
+            if trained_samples % 100 == 0:
+                t1 = time.time()
+                print "Average sentence log loss: %.5f" % log_loss / 1000.0,
+                print "\tword log loss: %.5f" % log_loss / float(trained_words),
+                print "\twords/s: %dk" % trained_words / 1000.0 / float(t1 - t0)
+                log_loss = 0
+                trained_words = 0
+                t0 = t1
+            if trained_epochs >= 5:
+                # half samples clip
+                if trained_samples == len(samples) / 2:
+                    ff_lr /= 2
+                    lstm_lr /= 2
+                if trained_samples == len(samples):
+                    ff_lr /= 2
+                    lstm_lr /= 2
+        trained_epochs += 1
+
+
+def Grad_check(params, sample):
+    """
+    :param params:
+    :param sample:
+    :return:
+    """
+    print "start gradient check"
+    grads, _ = Feed_forward_backward(params, sample[0], sample[1], sample[2])
+    Check_diff(params, grads, "W_we_in", sample)
+    Check_diff(params, grads, "W_we_out", sample)
+    Check_diff(params, grads, "W_o", sample)
+    for i in range(params["num_layers"]):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        lm_layer_name = "lm_LSTM_layer_" + str(i)
+        Check_diff(params, grads, em_layer_name, sample)
+        Check_diff(params, grads, lm_layer_name, sample)
+    print "gradient check end"
+
+
+def Auto_grad(params, fluct_weights, sample):
+    """
+    :param params:
+    :param fluct_weights: A weight matrix in params. It's ptr, change the
+           element here, corresponding elements in params wil also be changed.
+    :param sample:
+    :return numerical_grad
+    """
+    W = fluct_weights
+    mu = 2 * math.sqrt(1e-12) * (1 + norm(W, 2))
+    diff1 = np.zeros(W.shape, dtype=real)
+    diff2 = np.zeros(W.shape, dtype=real)
+    for i in range(W.shape[0]):
+        for j in range(W.shape[1]):
+            W[i, j] += mu
+            _, diff1[i, j] = Feed_forward_backward(params, sample[0], sample[1],
+                                                   sample[2])
+            W[i, j] -= 2 * mu
+            _, diff2[i, j] = Feed_forward_backward(params, sample[0], sample[1],
+                                                   sample[2])
+            # Restore the weight value at (i,j)
+            W[i, j] += mu
+    numerical_grad = (diff1 - diff2) / (2 * mu)
+    return numerical_grad
+
+
+def Check_diff(params, grads, name, sample):
+    """
+    :param params:
+    :param grads:
+    :param name:
+    :param sample:
+    :return:
+    """
+    if isinstance(params[name], list):
+        for i, weights in enumerate(params[name]):
+            numDg = Auto_grad(params, weights, sample)
+            diff = grads[name][i] - numDg
+            if sum(np.abs(diff) > 1e-4) > 0:
+                print "%s_%d gradient check failed" % (name, i)
+                save_name = "%s_%d.diff.txt" % (name, i)
+                np.savetxt(os.path.join("debug", save_name))
+            else:
+                print "%s_%d gradient check succeeded" % (name, i)
+    else:
+        numDg = Auto_grad(params, params[name], sample)
+        diff = grads[name] - numDg
+        if sum(np.abs(diff) > 1e-4) > 0:
+            print "%s gradient check failed" % name
+            save_name = "%s.diff.txt" % name
+            np.savetxt(os.path.join("debug", save_name))
+        else:
+            print "%s gradient check succeeded" % name
