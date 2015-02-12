@@ -15,6 +15,7 @@ from numpy.linalg import norm
 import math
 import time
 import os
+import cPickle
 
 real = np.float32
 
@@ -317,6 +318,7 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
 def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
                   lstm_range=0.08, embedding_range=0.1, softmax_range=0.1):
     """This version must contain a word_embedding layer
+    :rtype : dict
     :param hidden_size_list: one value for each LSTM layer
     :param we_size: the word_embedding layer size.
     :param in_vocab_size: used to define the word_embedding matrix
@@ -567,6 +569,9 @@ def Grad_check(params, sample):
     :param sample:
     :return:
     """
+    # Create a folder to save the failed gradient check
+    if not os.path.exists("debug"):
+        os.mkdir("debug")
     print "start gradient check"
     grads, _ = Feed_forward_backward(params, sample[0], sample[1], sample[2])
     Check_diff(params, grads, "W_we_in", sample)
@@ -581,7 +586,7 @@ def Grad_check(params, sample):
 
 
 def Auto_grad(params, fluct_weights, sample):
-    """
+    """This function refers to minFunc autoGrad function
     :param params:
     :param fluct_weights: A weight matrix in params. It's ptr, change the
            element here, corresponding elements in params wil also be changed.
@@ -633,3 +638,32 @@ def Check_diff(params, grads, name, sample):
             np.savetxt(os.path.join("debug", save_name))
         else:
             print "%s gradient check succeeded" % name
+
+
+def Save_params(params, name="STS.pkl"):
+    """Save parameters
+    :param params:
+    :param name:
+    :return:
+    """
+    pkl_file = open(name, "wb")
+    cPickle.dump(params, pkl_file)
+    pkl_file.close()
+
+
+def Load_params(name="STS.pkl"):
+    """Load dict of parameters
+    :param name:
+    :return:
+    """
+    pkl_file = open(name, "rb")
+    return cPickle.load(pkl_file)
+
+
+def Generate(params, in_word_idx_seq):
+    """Generate a sequence
+    :param params:
+    :param in_word_idx_seq:
+    :return:
+    """
+    None
