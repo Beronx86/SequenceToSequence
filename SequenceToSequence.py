@@ -87,8 +87,8 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     """
     W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
     layer_size = W.shape[0]
-    time_steps = lower_output_acts.shape[0]
-    input_size = lower_output_acts.shape[1]
+    time_steps = len(lower_output_acts)
+    input_size = lower_output_acts[0].shape[0]
     joint_size = layer_size + input_size + 1  # 1 for bias
     I, X, Y, S = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
     X_iota, Y_iota, Yp_iota = range(time_steps), range(time_steps), range(time_steps)
@@ -113,15 +113,15 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
         I[t][layer_size: layer_size + input_size] = lower_output_acts[t]
         I[t][layer_size + input_size] = 1   # Bias
         # Calculate input gate activations
-        X_iota[t] = W_iota_y.dot(I[t]) + W_iota_s.dot(prev_S)
+        X_iota[t] = W_iota_y.dot(I[t]) + W_iota_s * prev_S
         Y_iota[t], Yp_iota[t] = logistic_prime(X_iota[t])
         # Calculate forget gate activations
-        X_phi[t] = W_phi_y.dot(I[t]) + W_phi_s.dot(prev_S)
+        X_phi[t] = W_phi_y.dot(I[t]) + W_phi_s * prev_S
         Y_phi[t], Yp_phi[t] = logistic_prime(X_phi[t])
         # Calculate cells
         X[t] = W.dot(I[t])
         G[t], Gp[t] = tanh_prime(X[t])
-        S[t] = Y_phi[t] * prev_S + Y_iota * G[t]
+        S[t] = Y_phi[t] * prev_S + Y_iota[t] * G[t]
         # Calculate output gate activations
         X_eta[t] = W_eta_y.dot(I[t]) + W_eta_s * prev_S
         Y_eta[t], Yp_eta[t] = logistic_prime(X_eta[t])
@@ -131,7 +131,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     return Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I
 
 
-def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
+def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
     """Feed backward a LSTM layer. This function also contains the feed backward
        between two layers. Specifically this layer feed back to the lower layer.
        :param weights:
@@ -157,8 +157,8 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
               The error come from the upper layer. Note that they have
               multiplied by the upper weight matrix transpose. So they are just
               the errors injected to this layer.
-       :param final:
-              [D_hidden_units, D_states, D_forget_gate, D_input_gate]
+       :param final: for idx t + 1
+              [D_hidden_units, D_states, D_forget_gate, D_input_gate, Y_phi_futu]
               The final future hidden unites, states, forget gate, input gate
               derivatives. Default value is []. The embedding phrase is able to
               receive errors from the language model phrase.
@@ -167,6 +167,8 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
               S[t - 1] --> forget_gate[t]
               S[t - 1] --> S[t]
               H[t - 1] --> Cell[t]
+       :param prev: for idx t - 1
+              the States values before 0 time for lm LSTM
        :return Dg_iota_y: Corresponding to the weights
                Dg_iota_s:
                Dg_phi_y:
@@ -182,8 +184,8 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
     W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
     Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I = inter_vars
     layer_size = W.shape[0]
-    time_steps = I.shape[0]
-    joint_szie = I.shape[1]
+    time_steps = len(I)
+    joint_szie = I[0].shape[0]
     input_size = joint_szie - layer_size - 1    # 1 for bias
     # Initialize gradient vectors
     lower_input_errors = range(time_steps)
@@ -200,15 +202,21 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
         dE_futu = np.zeros((layer_size, 1), dtype=real)
         Dl_phi_futu = np.zeros((layer_size, 1), dtype=real)
         Dl_iota_futu = np.zeros((layer_size, 1), dtype=real)
+        Y_phi_futu = np.zeros((layer_size, 1), dtype=real)
     else:
         # Embedding net receive error from lm net
-        Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu = final
+        Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu = final
+    if len(prev) != 0:
+        prev_S = prev[0]
+    else:
+        prev_S = np.zeros((layer_size, 1), dtype=real)
+
     # Calculate the error and add it
     for t in reversed(range(time_steps)):
         # Calculate the epsilon
         if input_errors == 0:
             # the top layer of embedding net receives no errors form upper layer
-            Eps = W[0: layer_size].T.dot(Dl_futu)
+            Eps = W.T[0: layer_size].dot(Dl_futu)
         else:
             Eps = input_errors[t] + W.T[0: layer_size].dot(Dl_futu)
         # Calculate the change in output gates
@@ -217,7 +225,7 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
         Dg_eta_s += Dl_eta * S[t]
         # Calculate the derivative of the error feed back to states
         dE = (Eps * Y_eta[t] * Hp[t] +
-              dE_futu * Y_phi[t + 1] +
+              dE_futu * Y_phi_futu +
               Dl_iota_futu * W_iota_s +
               Dl_phi_futu * W_phi_s +
               Dl_eta * W_eta_s)
@@ -225,7 +233,10 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
         Dl = Y_iota[t] * Gp[t] * dE
         Dg += Dl.dot(I[t].T)
         # Calculate the delta of forget gate
-        Dl_phi = Yp_phi[t] * dE * S[t - 1]
+        if t > 0:
+            Dl_phi = Yp_phi[t] * dE * S[t - 1]
+        else:
+            Dl_phi = Yp_phi[t] * dE * prev_S
         Dg_phi_y += Dl_phi.dot(I[t].T)
         Dg_phi_s += Dl_phi * S[t]
         # Calculate the delta of input gate
@@ -237,12 +248,13 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[]):
         dE_futu = dE
         Dl_phi_futu = Dl_phi
         Dl_iota_futu = Dl_iota
+        Y_phi_futu = Y[t]
         lower_input_errors[t] = (W_iota_y.T[layer_size: layer_size + input_size].dot(Dl_iota) +
                                  W_phi_y.T[layer_size: layer_size + input_size].dot(Dl_phi) +
                                  W.T[layer_size: layer_size + input_size].dot(Dl) +
                                  W_eta_y.T[layer_size: layer_size + input_size].dot(Dl_eta))
     return ([Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_phi_s],
-            lower_input_errors, [Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu])
+            lower_input_errors, [Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu])
 
 
 # Direct input version, more time consuming in matrix multiplication
@@ -258,9 +270,10 @@ def Input_feed_forward(W_we, word_idx_seq):
     """
     time_steps = len(word_idx_seq)
     we_dim = W_we.shape[0]
-    we_seq = np.zeros((time_steps, we_dim), dtype=real)
+    we_seq = range(time_steps)
     for t in range(time_steps):
-        we_seq[t] = W_we[:, word_idx_seq[t]]
+        we_seq[t] = np.zeros((we_dim, 1), dtype=real)
+        we_seq[t] = np.asarray([W_we.T[word_idx_seq[t]]]).T
     return we_seq
 
 
@@ -272,9 +285,11 @@ def Input_feed_backward(W_we, input_errors, word_idx_seq):
     :param word_idx_seq:
     :return:
     """
+    time_steps = len(input_errors)
     Dg_we = np.zeros(W_we.shape, dtype=real)
-    for word_idx in word_idx_seq:
-        Dg_we[:, word_idx] += input_errors
+    for t in reversed(range(time_steps)):
+        word_idx = word_idx_seq[t]
+        Dg_we.T[word_idx] += input_errors[t][0]
     return Dg_we
 
 
@@ -287,16 +302,16 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
             lower_input_errors
             sent_log_loss
     """
-    time_steps = lower_output_acts.shape[0]
+    time_steps = len(lower_output_acts)
     layer_size = W_o.shape[0]
     joint_size = W_o.shape[1]
     input_size = W_o.shape[1] - 1   # 1 for Bias
     # Softmax feed forward
     sent_log_loss = 0
-    Y = np.zeros((time_steps, joint_size), dtype=real)
-    X_o, Y_o = range(time_steps), range(time_steps)
+    Y, X_o, Y_o = range(time_steps), range(time_steps), range(time_steps)
     for t in range(time_steps):
         # Calculate the emission
+        Y[t] = np.zeros((joint_size, 1), dtype=real)
         Y[t][:input_size] = lower_output_acts[t]
         Y[t][-1] = 1    # 1 for Bias
         X_o[t] = W_o.dot(Y[t])
@@ -449,12 +464,14 @@ def Feed_forward_backward(params, in_word_idx_seq, out_word_idx_seq,
         em_inter_vals = inter_vals[em_layer_name]
         lm_inter_vals = inter_vals[lm_layer_name]
         # Feed back language layer
-        lm_layer_ret = LSTM_feed_backward(lm_weights, lm_inter_vals, lm_input_errors)
+        prev = [em_inter_vals[1][-1]]
+        lm_layer_ret = LSTM_feed_backward(lm_weights, lm_inter_vals,
+                                          lm_input_errors, prev=prev)
         # Get the future error for embedding layer
         em_final = lm_layer_ret[2]
         # Feed back em layer
         em_layer_ret = LSTM_feed_backward(em_weights, em_inter_vals,
-                                          em_input_errors, em_final)
+                                          em_input_errors, final=em_final)
         # Save the gradients
         grads[em_layer_name] = em_layer_ret[0]
         grads[lm_layer_name] = lm_layer_ret[0]
@@ -623,19 +640,19 @@ def Check_diff(params, grads, name, sample):
         for i, weights in enumerate(params[name]):
             numDg = Auto_grad(params, weights, sample)
             diff = grads[name][i] - numDg
-            if sum(np.abs(diff) > 1e-4) > 0:
+            if np.sum(np.abs(diff) > 1e-4) > 0:
                 print "%s_%d gradient check failed" % (name, i)
                 save_name = "%s_%d.diff.txt" % (name, i)
-                np.savetxt(os.path.join("debug", save_name))
+                np.savetxt(os.path.join("debug", save_name), diff)
             else:
                 print "%s_%d gradient check succeeded" % (name, i)
     else:
         numDg = Auto_grad(params, params[name], sample)
         diff = grads[name] - numDg
-        if sum(np.abs(diff) > 1e-4) > 0:
+        if np.sum(np.abs(diff) > 1e-4) > 0:
             print "%s gradient check failed" % name
             save_name = "%s.diff.txt" % name
-            np.savetxt(os.path.join("debug", save_name))
+            np.savetxt(os.path.join("debug", save_name), diff)
         else:
             print "%s gradient check succeeded" % name
 
