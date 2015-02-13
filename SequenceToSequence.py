@@ -22,7 +22,8 @@ real = np.float32
 
 # Softmax function
 def softmax(x):
-    e = np.exp(x - np.max(x))  # prevent overflow
+    # e = np.exp(x - np.max(x))  # prevent overflow
+    e = np.exp(x)
     return e / np.sum(e)
 
 
@@ -317,14 +318,18 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
         X_o[t] = W_o.dot(Y[t])
         Y_o[t] = softmax(X_o[t])
         # sent_log_loss = - sent_log_probability
-        sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+        # sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+        # sent_log_loss += math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+        sent_log_loss += math.log(Y_o[t][target_idx_seq[t]])
     # Softmax feed backward
     lower_input_errors = range(time_steps)
     Dg_o = np.zeros((layer_size, joint_size), dtype=real)
     for t in reversed(range(time_steps)):
         # A little different from Neubig's code
-        Dl_o = Y_o[t]
-        Dl_o[target_idx_seq[t]] -= 1
+        # Dl_o = Y_o[t] * 1
+        # Dl_o[target_idx_seq[t]] -= 1
+        Dl_o = Y_o[t] * -1
+        Dl_o[target_idx_seq[t]] += 1
         Dg_o += Dl_o.dot(Y[t].T)
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
     return Dg_o, lower_input_errors, sent_log_loss
@@ -636,25 +641,37 @@ def Check_diff(params, grads, name, sample):
     :param sample:
     :return:
     """
+    weights_name = ["W_iota_y", "W_iota_s", "W_phi_y", "W_phi_s", "W",
+                    "W_eta_y", "W_eta_s"]
     if isinstance(params[name], list):
         for i, weights in enumerate(params[name]):
             numDg = Auto_grad(params, weights, sample)
             diff = grads[name][i] - numDg
             if np.sum(np.abs(diff) > 1e-4) > 0:
-                print "%s_%d gradient check failed" % (name, i)
-                save_name = "%s_%d.diff.txt" % (name, i)
+                temp = name + "_" + weights_name[i]
+                formatted_name = " " * (24 - len(temp)) + temp
+                print "%s\tgradient check failed" % formatted_name
+                save_name = "%s_%s.filed.diff.txt" % (name, weights_name[i])
                 np.savetxt(os.path.join("debug", save_name), diff)
             else:
-                print "%s_%d gradient check succeeded" % (name, i)
+                temp = name + "_" + weights_name[i]
+                formatted_name = " " * (24 - len(temp)) + temp
+                print "%s\tgradient check succeeded" % formatted_name
+                save_name = "%s_%s.succeeded.diff.txt" % (name, weights_name[i])
+                np.savetxt(os.path.join("debug", save_name), diff)
     else:
         numDg = Auto_grad(params, params[name], sample)
         diff = grads[name] - numDg
         if np.sum(np.abs(diff) > 1e-4) > 0:
-            print "%s gradient check failed" % name
-            save_name = "%s.diff.txt" % name
+            formatted_name = " " * (24 - len(name)) + name
+            print "%s\tgradient check failed" % formatted_name
+            save_name = "%s.failed.diff.txt" % name
             np.savetxt(os.path.join("debug", save_name), diff)
         else:
-            print "%s gradient check succeeded" % name
+            formatted_name = " " * (24 - len(name)) + name
+            print "%s\tgradient check succeeded" % formatted_name
+            save_name = "%s.succeeded.diff.txt" % name
+            np.savetxt(os.path.join("debug", save_name), diff)
 
 
 def Save_params(params, name="STS.pkl"):
