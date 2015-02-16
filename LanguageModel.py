@@ -62,12 +62,13 @@ def Auto_grad_LM(params, fluct_weights, sample):
     diff2 = np.zeros(W.shape, dtype=real)
     for i in range(W.shape[0]):
         for j in range(W.shape[1]):
+            old_W_i_j = W[i, j]
             W[i, j] += perturbation
             _, diff1[i, j] = Feed_forward_backward_LM(params, sample[0], sample[1])
-            W[i, j] -= 2 * perturbation
+            W[i, j] = old_W_i_j - perturbation
             _, diff2[i, j] = Feed_forward_backward_LM(params, sample[0], sample[1])
             # Restore the weight value at (i,j)
-            W[i, j] += perturbation
+            W[i, j] = old_W_i_j
     numerical_grad = (diff1 - diff2) / (2 * perturbation)
     return numerical_grad
 

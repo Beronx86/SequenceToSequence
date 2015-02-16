@@ -40,6 +40,12 @@ def logistic_prime(x):
     return y, y_prime
 
 
+def linear_prime(x):
+    y = x * 1
+    y_prime = np.ones(y.shape, dtype=real)
+    return y, y_prime
+
+
 def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     """Feed forward a LSTM layer. This function also contains the feed forward
        between two layers. Specifically a lower layer output activations feed
@@ -114,19 +120,19 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
         I[t][layer_size + input_size] = 1   # Bias
         # Calculate input gate activations
         X_iota[t] = W_iota_y.dot(I[t]) + W_iota_s * prev_S
-        Y_iota[t], Yp_iota[t] = logistic_prime(X_iota[t])
+        Y_iota[t], Yp_iota[t] = linear_prime(X_iota[t])
         # Calculate forget gate activations
         X_phi[t] = W_phi_y.dot(I[t]) + W_phi_s * prev_S
-        Y_phi[t], Yp_phi[t] = logistic_prime(X_phi[t])
+        Y_phi[t], Yp_phi[t] = linear_prime(X_phi[t])
         # Calculate cells
         X[t] = W.dot(I[t])
-        G[t], Gp[t] = tanh_prime(X[t])
+        G[t], Gp[t] = linear_prime(X[t])
         S[t] = Y_phi[t] * prev_S + Y_iota[t] * G[t]
         # Calculate output gate activations
         X_eta[t] = W_eta_y.dot(I[t]) + W_eta_s * S[t]
-        Y_eta[t], Yp_eta[t] = logistic_prime(X_eta[t])
+        Y_eta[t], Yp_eta[t] = linear_prime(X_eta[t])
         # Calculate cell outputs
-        H[t], Hp[t] = tanh_prime(S[t])
+        H[t], Hp[t] = linear_prime(S[t])
         Y[t] = Y_eta[t] * H[t]
     return Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I
 
@@ -200,16 +206,17 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
     if len(final) == 0:
         Dl_futu = np.zeros((layer_size, 1), dtype=real)
         dE_futu = np.zeros((layer_size, 1), dtype=real)
+        Dl_eta_futu = np.zeros((layer_size, 1), dtype=real)
         Dl_phi_futu = np.zeros((layer_size, 1), dtype=real)
         Dl_iota_futu = np.zeros((layer_size, 1), dtype=real)
         Y_phi_futu = np.zeros((layer_size, 1), dtype=real)
     else:
         # Embedding net receive error from lm net
-        Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu = final
-    if len(prev) != 0:
-        prev_states = prev[0]
-    else:
+        Dl_futu, dE_futu, Dl_eta_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu = final
+    if len(prev) == 0:
         prev_states = np.zeros((layer_size, 1), dtype=real)
+    else:
+        prev_states = prev[0]
 
     # Calculate the error and add it
     for t in reversed(range(time_steps)):
@@ -220,9 +227,16 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         # Calculate the epsilon
         if input_errors == 0:
             # the top layer of embedding net receives no errors form upper layer
-            Eps = W.T[0: layer_size].dot(Dl_futu)
+            Eps = (W.T[0: layer_size].dot(Dl_futu) +
+                   W_eta_y.T[0: layer_size].dot(Dl_eta_futu) +
+                   W_phi_y.T[0: layer_size].dot(Dl_phi_futu) +
+                   W_iota_y.T[0: layer_size].dot(Dl_iota_futu))
         else:
-            Eps = input_errors[t] + W.T[0: layer_size].dot(Dl_futu)
+            Eps = (input_errors[t] +
+                   W.T[0: layer_size].dot(Dl_futu) +
+                   W_eta_y.T[0: layer_size].dot(Dl_eta_futu) +
+                   W_phi_y.T[0: layer_size].dot(Dl_phi_futu) +
+                   W_iota_y.T[0: layer_size].dot(Dl_iota_futu))
         # Calculate the change in output gates
         Dl_eta = Yp_eta[t] * Eps * H[t]    # element wise multiplication
         Dg_eta_y += Dl_eta.dot(I[t].T)
@@ -247,15 +261,17 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         # Save the future ones
         Dl_futu = Dl
         dE_futu = dE
+        Dl_eta_futu = Dl_eta
         Dl_phi_futu = Dl_phi
         Dl_iota_futu = Dl_iota
-        Y_phi_futu = Y[t]
+        Y_phi_futu = Y_phi[t]
         lower_input_errors[t] = (W_iota_y.T[layer_size: layer_size + input_size].dot(Dl_iota) +
                                  W_phi_y.T[layer_size: layer_size + input_size].dot(Dl_phi) +
                                  W.T[layer_size: layer_size + input_size].dot(Dl) +
                                  W_eta_y.T[layer_size: layer_size + input_size].dot(Dl_eta))
     return ([Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_eta_s],
-            lower_input_errors, [Dl_futu, dE_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu])
+            lower_input_errors,
+            [Dl_futu, dE_futu, Dl_eta_futu, Dl_phi_futu, Dl_iota_futu, Y_phi_futu])
 
 
 # Direct input version, more time consuming in matrix multiplication
