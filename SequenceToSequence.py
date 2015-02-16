@@ -120,19 +120,19 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
         I[t][layer_size + input_size] = 1   # Bias
         # Calculate input gate activations
         X_iota[t] = W_iota_y.dot(I[t]) + W_iota_s * prev_S
-        Y_iota[t], Yp_iota[t] = linear_prime(X_iota[t])
+        Y_iota[t], Yp_iota[t] = logistic_prime(X_iota[t])
         # Calculate forget gate activations
         X_phi[t] = W_phi_y.dot(I[t]) + W_phi_s * prev_S
-        Y_phi[t], Yp_phi[t] = linear_prime(X_phi[t])
+        Y_phi[t], Yp_phi[t] = logistic_prime(X_phi[t])
         # Calculate cells
         X[t] = W.dot(I[t])
-        G[t], Gp[t] = linear_prime(X[t])
+        G[t], Gp[t] = logistic_prime(X[t])
         S[t] = Y_phi[t] * prev_S + Y_iota[t] * G[t]
         # Calculate output gate activations
         X_eta[t] = W_eta_y.dot(I[t]) + W_eta_s * S[t]
-        Y_eta[t], Yp_eta[t] = linear_prime(X_eta[t])
+        Y_eta[t], Yp_eta[t] = logistic_prime(X_eta[t])
         # Calculate cell outputs
-        H[t], Hp[t] = linear_prime(S[t])
+        H[t], Hp[t] = logistic_prime(S[t])
         Y[t] = Y_eta[t] * H[t]
     return Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I
 
@@ -604,6 +604,10 @@ def Grad_check(params, sample):
     # Create a folder to save the failed gradient check
     if not os.path.exists("debug"):
         os.mkdir("debug")
+    else:
+        files = os.listdir("debug")
+        for f in files:
+            os.remove(os.path.join("debug", f))
     print "start gradient check"
     grads, _ = Feed_forward_backward(params, sample[0], sample[1], sample[2])
     Check_diff(params, grads, "W_o", sample)
@@ -657,7 +661,7 @@ def Check_diff(params, grads, name, sample):
     """
     weights_name = ["W_iota_y", "W_iota_s", "W_phi_y", "W_phi_s", "W",
                     "W_eta_y", "W_eta_s"]
-    sigFigs = 5
+    sigFigs = 6
     if isinstance(params[name], list):
         for i, weights in enumerate(params[name]):
             numDg = Auto_grad(params, weights, sample)

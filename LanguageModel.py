@@ -38,6 +38,10 @@ def Feed_forward_backward_LM(params, in_word_idx_seq, out_word_idx_seq):
 def Grad_check_LM(params, sample):
     if not os.path.exists("debug"):
         os.mkdir("debug")
+    else:
+        files = os.listdir("debug")
+        for f in files:
+            os.remove(os.path.join("debug", f))
     print "start gradient check"
     grads, _ = Feed_forward_backward_LM(params, sample[0], sample[1])
     Check_diff_LM(params, grads, "W_o", sample)
@@ -83,7 +87,7 @@ def Check_diff_LM(params, grads, name, sample):
     """
     weights_name = ["W_iota_y", "W_iota_s", "W_phi_y", "W_phi_s", "W",
                     "W_eta_y", "W_eta_s"]
-    sigFigs = 5
+    sigFigs = 6
     if isinstance(params[name], list):
         for i, weights in enumerate(params[name]):
             numDg = Auto_grad_LM(params, weights, sample)

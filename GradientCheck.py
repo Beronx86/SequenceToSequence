@@ -6,29 +6,44 @@ import SequenceToSequence as STS
 import LanguageModel as LM
 real = np.float64
 
-check_STS = 0
-check_LM = 1
+check_STS_2vocab = 1
+check_STS_1vocab = 0
+check_LM = 0
 check_softmax = 0
 rng = np.random.RandomState(89757)
-# text vocab range(10)
-if check_STS:
-    time_steps = 11
+if check_STS_2vocab:
+    em_time_steps = 11
+    lm_time_steps = 7
     in_vocab_size = 27
     out_vocab_szie = 33
-    hidden_size_list = [30, 20]
+    hidden_size_list = [8]
     we_size = 19
     params = STS.Construct_net(hidden_size_list, we_size, in_vocab_size,
-                               out_vocab_szie)
-    in_vocab = rng.randint(in_vocab_size, size=time_steps).tolist()
-    out = rng.randint(low=1, high=out_vocab_szie, size=time_steps).tolist()
+                               out_vocab_szie, embedding_range=1)
+    in_vocab = rng.randint(in_vocab_size, size=em_time_steps).tolist()
+    out = rng.randint(low=1, high=out_vocab_szie, size=lm_time_steps).tolist()
     sample = [in_vocab, [0] + out, out + [0]]
     STS.Grad_check(params, sample)
+
+if check_STS_1vocab:
+    em_time_steps = 11
+    lm_time_steps = 9
+    vocab_size = 27
+    hidden_size_list = [22]
+    we_size = 15
+    params = STS.Construct_net(hidden_size_list, we_size, vocab_size,
+                               embedding_range=1)
+    in_vocab = rng.randint(vocab_size, size=em_time_steps).tolist()
+    out = rng.randint(low=1, high=vocab_size, size=lm_time_steps).tolist()
+    sample = [in_vocab, [0] + out, out + [0]]
+    STS.Grad_check(params, sample)
+
 
 # Check LM is mainly to check the lstm feed forward and backward
 if check_LM:
     vocab_size = 80
     time_steps = 20
-    hidden_size_list = [11]
+    hidden_size_list = [11, 21]
     we_size = 39
     rand_sample = rng.randint(low=1, high=vocab_size, size=time_steps)
     params = LM.Construct_LM_net(hidden_size_list, we_size, vocab_size,
