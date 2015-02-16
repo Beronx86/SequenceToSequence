@@ -101,10 +101,10 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     X_phi, Y_phi, Yp_phi = range(time_steps), range(time_steps), range(time_steps)
     X_eta, Y_eta, Yp_eta = range(time_steps), range(time_steps), range(time_steps)
     G, Gp, H, Hp = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
-    if len(init) == 0:
-        prev_hidden = np.zeros((layer_size, 1), dtype=real)
-        prev_states = np.zeros((layer_size, 1), dtype=real)
-    else:
+
+    prev_hidden = np.zeros((layer_size, 1), dtype=real)
+    prev_states = np.zeros((layer_size, 1), dtype=real)
+    if len(init) != 0:
         prev_hidden, prev_states = init
 
     for t in range(time_steps):
@@ -203,70 +203,51 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
     Dg_iota_y = np.zeros((layer_size, joint_szie), dtype=real)
     Dg_iota_s = np.zeros((layer_size, 1), dtype=real)
     # Save the last deltas necessary
-    if len(final) == 0:
-        Dl_input_errors = 0
-        Dl_eta_input_errors = 0
-        Dl_phi_input_errors = 0
-        Dl_iota_input_errors = 0
-        dE_futu = 0
-        Y_phi_futu = 0
-    else:
+    Dl_recur_errors = 0
+    Dl_eta_recur_errors = 0
+    Dl_phi_recur_errors = 0
+    Dl_iota_recur_errors = 0
+    dE_recur_errors = 0
+    dE_phi_errors = 0
+    dE_iota_errors = 0
+    prev_states = 0
+    if len(final) != 0:
         # Embedding net receive error from lm net
-        (Dl_input_errors, Dl_eta_input_errors, Dl_phi_input_errors,
-         Dl_iota_input_errors, dE_futu, Y_phi_futu) = final
-    Dl_futu = 0
-    Dl_eta_futu = 0
-    Dl_phi_futu = 0
-    Dl_iota_futu = 0
-    if len(prev) == 0:
-        prev_states = 0
-    else:
+        (Dl_recur_errors, Dl_eta_recur_errors, Dl_phi_recur_errors,
+         Dl_iota_recur_errors, dE_recur_errors, dE_phi_errors, dE_iota_errors) = final
+    if len(prev) != 0:
         prev_states = prev[0]
 
     # Calculate the error and add it
     for t in reversed(range(time_steps)):
-        if t == time_steps - 1:
+        # Calculate the epsilon
+        if input_errors == 0:
+            # the top layer of embedding net receives no errors form upper
+            # layer
+            Eps = (Dl_recur_errors +
+                   Dl_eta_recur_errors +
+                   Dl_phi_recur_errors +
+                   Dl_iota_recur_errors)
+        else:
+            Eps = (input_errors[t] +
+                   Dl_recur_errors +
+                   Dl_eta_recur_errors +
+                   Dl_phi_recur_errors +
+                   Dl_iota_recur_errors)
+        if t == 0:
             prev_S = prev_states
-            # Calculate the epsilon
-            if input_errors == 0:
-                # the top layer of embedding net receives no errors form upper
-                # layer
-                Eps = (Dl_input_errors +
-                       Dl_eta_input_errors +
-                       Dl_phi_input_errors +
-                       Dl_iota_input_errors)
-            else:
-                Eps = (input_errors[t] +
-                       Dl_input_errors +
-                       Dl_eta_input_errors +
-                       Dl_phi_input_errors +
-                       Dl_iota_input_errors)
         else:
             prev_S = S[t - 1]
-            # Calculate the epsilon
-            if input_errors == 0:
-                # the top layer of embedding net receives no errors form upper
-                # layer
-                Eps = (W.T[0: layer_size].dot(Dl_futu) +
-                       W_eta_y.T[0: layer_size].dot(Dl_eta_futu) +
-                       W_phi_y.T[0: layer_size].dot(Dl_phi_futu) +
-                       W_iota_y.T[0: layer_size].dot(Dl_iota_futu))
-            else:
-                Eps = (input_errors[t] +
-                       W.T[0: layer_size].dot(Dl_futu) +
-                       W_eta_y.T[0: layer_size].dot(Dl_eta_futu) +
-                       W_phi_y.T[0: layer_size].dot(Dl_phi_futu) +
-                       W_iota_y.T[0: layer_size].dot(Dl_iota_futu))
         # Calculate the change in output gates
         Dl_eta = Yp_eta[t] * Eps * H[t]    # element wise multiplication
         Dg_eta_y += Dl_eta.dot(I[t].T)
         Dg_eta_s += Dl_eta * S[t]
         # Calculate the derivative of the error feed back to states
         dE = (Eps * Y_eta[t] * Hp[t] +
-              dE_futu * Y_phi_futu +
-              Dl_iota_futu * W_iota_s +
-              Dl_phi_futu * W_phi_s +
-              Dl_eta * W_eta_s)
+              Dl_eta * W_eta_s +
+              dE_recur_errors +
+              dE_phi_errors +
+              dE_iota_errors)
         # Calculate the delta of the states
         Dl = Y_iota[t] * Gp[t] * dE
         Dg += Dl.dot(I[t].T)
@@ -278,27 +259,26 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         Dl_iota = Yp_iota[t] * dE * G[t]
         Dg_iota_y += Dl_iota.dot(I[t].T)
         Dg_iota_s += Dl_iota * prev_S
-        # Save the future ones
-        Dl_futu = Dl
-        Dl_eta_futu = Dl_eta
-        Dl_phi_futu = Dl_phi
-        Dl_iota_futu = Dl_iota
-        dE_futu = dE
-        Y_phi_futu = Y_phi[t]
+        # The errors inject to the previous time step
+        Dl_recur_errors = W.T[0: layer_size].dot(Dl)
+        Dl_eta_recur_errors = W_eta_y.T[0: layer_size].dot(Dl_eta)
+        Dl_phi_recur_errors = W_phi_y.T[0: layer_size].dot(Dl_phi)
+        Dl_iota_recur_errors = W_iota_y.T[0: layer_size].dot(Dl_iota)
+        # The states recurrent errors
+        dE_recur_errors = dE * Y_phi[t]
+        dE_phi_errors = Dl_phi * W_phi_s
+        dE_iota_errors = Dl_iota * W_iota_s
+        # The errors inject to lower layer
         lower_input_errors[t] = (W_iota_y.T[layer_size: layer_size + input_size].dot(Dl_iota) +
                                  W_phi_y.T[layer_size: layer_size + input_size].dot(Dl_phi) +
                                  W.T[layer_size: layer_size + input_size].dot(Dl) +
                                  W_eta_y.T[layer_size: layer_size + input_size].dot(Dl_eta))
         # The weights between EM and LM are the LM recurrent weights. So when
         # calculate the errors form LM to EM, the LM recurrent weights are used.
-    Dl_input_errors = W.T[0: layer_size].dot(Dl_futu)
-    Dl_eta_input_errors = W_eta_y.T[0: layer_size].dot(Dl_eta_futu)
-    Dl_phi_input_errors = W_phi_y.T[0: layer_size].dot(Dl_phi_futu)
-    Dl_iota_input_errors = W_iota_y.T[0: layer_size].dot(Dl_iota_futu)
     return ([Dg_iota_y, Dg_iota_s, Dg_phi_y, Dg_phi_s, Dg, Dg_eta_y, Dg_eta_s],
             lower_input_errors,
-            [Dl_input_errors, Dl_eta_input_errors, Dl_phi_input_errors,
-             Dl_iota_input_errors, dE_futu, Y_phi_futu])
+            [Dl_recur_errors, Dl_eta_recur_errors, Dl_phi_recur_errors,
+             Dl_iota_recur_errors, dE_recur_errors, dE_phi_errors, dE_iota_errors])
 
 
 # Direct input version, more time consuming in matrix multiplication
