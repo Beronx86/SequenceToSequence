@@ -104,8 +104,8 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     X_eta, Y_eta, Yp_eta = range(time_steps), range(time_steps), range(time_steps)
     G, Gp, H, Hp = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
 
-    prev_hidden = np.zeros((layer_size, 1), dtype=real)
-    prev_states = np.zeros((layer_size, 1), dtype=real)
+    prev_hidden = 0
+    prev_states = 0
     if len(init) != 0:
         prev_hidden, prev_states = init
 
@@ -318,11 +318,10 @@ def Input_feed_backward(W_we, input_errors, word_idx_seq):
     return Dg_we
 
 
-def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
+def Softmax_feed_fordward(W_o, lower_output_acts):
     """
     :param W_o:
     :param lower_output_acts:
-    :param target_idx_seq:
     :return Dg_o
             lower_input_errors
             sent_log_loss
@@ -332,7 +331,6 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
     joint_size = W_o.shape[1]
     input_size = W_o.shape[1] - 1   # 1 for Bias
     # Softmax feed forward
-    sent_log_loss = 0
     Y, X_o, Y_o = range(time_steps), range(time_steps), range(time_steps)
     for t in range(time_steps):
         # Calculate the emission
@@ -341,17 +339,26 @@ def Softmax_feed_fordward_backward(W_o, lower_output_acts, target_idx_seq):
         Y[t][-1] = 1    # 1 for Bias
         X_o[t] = W_o.dot(Y[t])
         Y_o[t] = softmax(X_o[t])
-        # sent_log_loss = - sent_log_probability
-        sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
+    return Y, Y_o
+
+
+def Softmax_feed_backward(W_o, inter_vals, target_idx_seq):
     # Softmax feed backward
+    Y, Y_o = inter_vals
+    time_steps = len(target_idx_seq)
+    layer_size = W_o.shape[0]
+    joint_size = W_o.shape[1]
+    input_size = joint_size - 1
     lower_input_errors = range(time_steps)
     Dg_o = np.zeros((layer_size, joint_size), dtype=real)
+    sent_log_loss = 0
     for t in reversed(range(time_steps)):
         # A little different from Neubig's code
         Dl_o = Y_o[t] * 1
         Dl_o[target_idx_seq[t]] -= 1
         Dg_o += Dl_o.dot(Y[t].T)
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
+        sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
     return Dg_o, lower_input_errors, sent_log_loss
 
 
@@ -474,8 +481,10 @@ def Feed_forward_backward(params, in_word_idx_seq, out_word_idx_seq,
         lm_lower_output_acts = lm_layer_ret[0]
     # Softmax layers feed forward and backward
     softmax_lower_output_acts = lm_lower_output_acts
-    softmax_ret = Softmax_feed_fordward_backward(params["W_o"],
-                                                 softmax_lower_output_acts, target_word_idx_seq)
+    softmax_inter_values = Softmax_feed_fordward(params["W_o"],
+                                                 softmax_lower_output_acts)
+    softmax_ret = Softmax_feed_backward(params["W_o"], softmax_inter_values,
+                                        target_word_idx_seq)
     grads["W_o"] = softmax_ret[0]
     sent_log_loss = softmax_ret[2]
     # Feed back LSTM layers
@@ -749,4 +758,110 @@ def Generate(params, in_word_idx_seq):
     :param in_word_idx_seq:
     :return:
     """
-    None
+    em_lower_output_acts = Input_feed_forward(params["W_we_in"], in_word_idx_seq)
+    init_list = []
+    for i in range(params["num_layers"]):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        em_weights = params[em_layer_name]
+        em_layer_ret = LSTM_feed_forward(em_weights, em_lower_output_acts)
+        em_output_acts = em_layer_ret[0]
+        em_states = em_layer_ret[1]
+        init = [em_output_acts[-1], em_states[-1]]
+        init_list.append(init)
+        em_lower_output_acts = em_layer_ret[0]
+    out_word_idx_seq = [0]  # Generating start from <EOS>
+    gen_seq = []
+    while True:     # predict 1 time step for each loop
+        lm_lower_output_acts = Input_feed_forward(params["W_we_out"], out_word_idx_seq)
+        for i in range(params["num_layers"]):
+            lm_layer_name = "lm_LSTM_layer_" + str(i)
+            lm_weights = params[lm_layer_name]
+            lm_layer_ret = LSTM_feed_forward(lm_weights, lm_lower_output_acts,
+                                             init_list[i])
+            lm_output_acts = lm_layer_ret[0]
+            lm_states = lm_layer_ret[1]
+            init_list[i] = [lm_output_acts[-1], lm_states[-1]]
+            lm_lower_output_acts = lm_layer_ret[0]
+        softmax_lower_output_acts = lm_lower_output_acts
+        _, predict = Softmax_feed_fordward(params["W_o"],
+                                           softmax_lower_output_acts)
+        max_idx = np.argmax(predict[0])
+        if max_idx == 0:
+            break
+        out_word_idx_seq = [max_idx]
+        gen_seq.append(max_idx)
+    return gen_seq
+
+
+# TODO: change the search to  binary search
+def Order_insert(beam_list, node, beam_size):
+    if len(beam_list) == 0:
+        beam_list.append(node)
+        return
+    i = 0
+    while i < len(beam_list):
+        if beam_list[i][2] < node[2]:
+            break
+        i += 1
+    if (i < len(beam_list) or
+            (i == len(beam_list) and len(beam_list) < beam_size)):
+        beam_list.insert(i, node)
+    if len(beam_list) > beam_size:
+        beam_list.pop()
+
+
+# Beam list is decreasing order
+# Beam node is a tuple (idx_seq, init, score)
+# score is sentence_prob / sentence_words
+def Beam_search_generate(params, in_word_idx_seq, beam_size=2, expand_thres=0):
+    init_list = []
+    beam_list = []
+    result_list = []
+    em_lower_output_acts = Input_feed_forward(params["W_we_in"], in_word_idx_seq)
+    for i in range(params["num_layers"]):
+        em_layer_name = "em_LSTM_layer_" + str(i)
+        em_weights = params[em_layer_name]
+        em_layer_ret = LSTM_feed_forward(em_weights, em_lower_output_acts)
+        em_output_acts = em_layer_ret[0]
+        em_states = em_layer_ret[1]
+        init = [em_output_acts[-1], em_states[-1]]
+        init_list.append(init)
+        em_lower_output_acts = em_layer_ret[0]
+    init_node = ([0], init_list, 0)
+    beam_list.append(init_node)
+    while beam_size > 0 and len(beam_list) > 0:
+        node = beam_list.pop(0)
+        if len(node[0]) > 1 and node[0][-1] == 0:
+            result_list.append(node[0])
+            beam_size -= 1
+            continue
+        old_gen_seq = node[0]
+        old_score = node[2]
+        out_word_idx_seq = [old_gen_seq[-1]]
+        old_init_list = node[1]
+
+        lm_lower_output_acts = Input_feed_forward(params["W_we_out"], out_word_idx_seq)
+        new_init_list = range(params["num_layers"])
+        for i in range(params["num_layers"]):
+            lm_layer_name = "lm_LSTM_layer_" + str(i)
+            lm_weights = params[lm_layer_name]
+            lm_layer_ret = LSTM_feed_forward(lm_weights, lm_lower_output_acts,
+                                             old_init_list[i])
+            lm_output_acts = lm_layer_ret[0]
+            lm_states = lm_layer_ret[1]
+            new_init_list[i] = [lm_output_acts[-1], lm_states[-1]]
+            lm_lower_output_acts = lm_layer_ret[0]
+        softmax_lower_output_acts = lm_lower_output_acts
+        _, predict = Softmax_feed_fordward(params["W_o"],
+                                           softmax_lower_output_acts)
+        for j in range(predict[0].shape[0]):
+            s = predict[0][j][0]
+            if s > expand_thres:
+                new_gen_seq = old_gen_seq + [j]
+                new_score = (old_score * len(old_gen_seq) + s) / len(new_gen_seq)
+                new_node = (new_gen_seq, new_init_list, new_score)
+                Order_insert(beam_list, new_node, beam_size)
+    return result_list
+
+
+

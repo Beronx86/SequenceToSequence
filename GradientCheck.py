@@ -7,9 +7,11 @@ import LanguageModel as LM
 real = np.float64
 
 check_STS_2vocab = 0
-check_STS_1vocab = 1
+check_STS_1vocab = 0
 check_LM = 0
 check_softmax = 0
+check_Generage = 0
+check_Beamsearch = 1
 rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
@@ -37,6 +39,29 @@ if check_STS_1vocab:
     out = rng.randint(low=1, high=vocab_size, size=lm_time_steps).tolist()
     sample = [in_vocab, [0] + out, out + [0]]
     STS.Grad_check(params, sample)
+
+if check_Generage:
+    em_time_steps = 11
+    lm_time_steps = 9
+    vocab_size = 27
+    hidden_size_list = [22, 17]
+    we_size = 15
+    params = STS.Construct_net(hidden_size_list, we_size, vocab_size,
+                               embedding_range=1)
+    in_vocab = rng.randint(vocab_size, size=em_time_steps).tolist()
+    gen = STS.Generate(params, in_vocab)
+
+
+if check_Beamsearch:
+    em_time_steps = 11
+    lm_time_steps = 9
+    vocab_size = 27
+    hidden_size_list = [22, 17]
+    we_size = 15
+    params = STS.Construct_net(hidden_size_list, we_size, vocab_size,
+                               embedding_range=1)
+    in_vocab = rng.randint(vocab_size, size=em_time_steps).tolist()
+    gen = STS.Beam_search_generate(params, in_vocab)
 
 
 # Check LM is mainly to check the lstm feed forward and backward
