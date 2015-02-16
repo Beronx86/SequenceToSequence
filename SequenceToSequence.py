@@ -3,10 +3,10 @@
 #            forward <--> backward
 #  input activations <--> output errors
 # output activations <--> input errors
-# embedding phrase & language model phrase
+# embedding phase & language model phase
 # in means input sequence, out means target sequence which is also used as input
-# in language model phrase
-# in words are embedding phrase inputs, output words are language model phrase
+# in language model phase
+# in words are embedding phase inputs, output words are language model phase
 # inputs
 # some code are redundant for clarity
 
@@ -75,8 +75,10 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
        :param init:
                [hidden output activations, states]
                The initial previous hidden output activations and
-               states. Default value is []. The language model is able to
-               include the previous hidden states by this arg.
+               states. Default value is []. In sequence to sequence learning,
+               the language model is able to include the previous hidden states
+               through this arg. Note that when these values propagate from EM
+               to LM, they are multiplied by LM recurrent weights
                Both are [layer_size,] vector
 
        :returns output_acts Y: [time_steps, layer_size] matrix
@@ -87,8 +89,8 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
                 Y_phi, Yp_phi:
                 Y_iota, Yp_iota:
                 inputs I: [time_steps, joint_size] matrix
-                output_acts is the input to the next layer.
-                [output_acts[-1], states[-1]] is the next phrase init
+                output_acts is the input to the upper layer.
+                [output_acts[-1], states[-1]] is the next phase init
                 Others are used for feed backward
     """
     W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
@@ -157,35 +159,36 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
        :param inter_vars:
                [Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi,
                 Y_iota, Yp_iota, I]
-               The intermediate variables calculated in the feed forward phrase.
+               The intermediate variables calculated in the feed forward phase.
                They are used to calculate the derivative of the weights
        :param input_errors: [time_steps, layer_size] matrix
               The error come from the upper layer. Note that they have
               multiplied by the upper weight matrix transpose. So they are just
               the errors injected to this layer.
-       :param final: for idx t + 1. 5 terms
-              [D_hidden_units, D_states, D_forget_gate, D_input_gate, Y_phi_futu]
+       :param final: errors for idx t + 1.
               The final future hidden unites, states, forget gate, input gate
-              derivatives. Default value is []. The embedding phrase is able to
-              receive errors from the language model phrase.
-              4 terms because:
-              S[t - 1] --> input gate[t]
-              S[t - 1] --> forget_gate[t]
-              S[t - 1] --> S[t]
-              H[t - 1] --> Cell[t]
+              derivatives. Default value is []. The embedding phase is able to
+              receive errors from the language model phase.
+              Specifically these are the errors form LM phase 0 time to EM phase
+              T-1 time. Note that values form EM to LM are multiplied by LM
+              recurrent weights. In error back propagation, errors should also
+              be multiplied by these weights.
+              [Dl_recur_errors, Dl_eta_recur_errors, Dl_phi_recur_errors,
+               Dl_iota_recur_errors, dE_recur_errors, dE_phi_errors,
+               dE_iota_errors]
+              Dl_recur_errors       errors from t + 1 states to t cell
+              Dl_eta_recur_errors   errors form t + 1 output gate to t cell
+              Dl_phi_recur_errors   errors form t + 1 forget gate to t cell
+              Dl_iota_recur_errors  errors from t + 1 input gate to t cell
+              dE_recur_errors    errors form t + 1 to t states
+              dE_phi_errors      errors from t + 1 forget gate to t states (peepholes)
+              dE_iota_errors     errors from t + 1 input gate to t states (peepholes)
        :param prev: for idx t - 1. 1 term
-              the States values before 0 time for lm LSTM
-       :return Dg_iota_y: Corresponding to the weights
-               Dg_iota_s:
-               Dg_phi_y:
-               Dg_phi_s:
-               Dg:
-               Dg_eta_y:
-               Dg_eta_s:
-               lower_input_error: error feed back from input gate, forget gate,
-               cell, output gate.
-               prev_final: used to pass training variable from language model
-               phrase to embedding phrase
+              the States values before 0 time for LM LSTM
+       :returns gradient_list: the orders are corresponding to weights order
+                lower_input_errors: the errors injected to lower layer. They are
+                fed back states, output gate, forget gate, input gate
+                recur_errors: errors form LM phase to EM phase
     """
     W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s = weights
     Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I = inter_vars
@@ -243,11 +246,11 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         Dg_eta_y += Dl_eta.dot(I[t].T)
         Dg_eta_s += Dl_eta * S[t]
         # Calculate the derivative of the error feed back to states
-        dE = (Eps * Y_eta[t] * Hp[t] +
-              Dl_eta * W_eta_s +
-              dE_recur_errors +
-              dE_phi_errors +
-              dE_iota_errors)
+        dE = (Eps * Y_eta[t] * Hp[t] +  # states to cell output weights
+              Dl_eta * W_eta_s +        # peepholes to forget gate
+              dE_recur_errors +         # s[t - 1] to s[t] weights
+              dE_phi_errors +           # peepholes to forget gate
+              dE_iota_errors)           # peepholes to input gate
         # Calculate the delta of the states
         Dl = Y_iota[t] * Gp[t] * dE
         Dg += Dl.dot(I[t].T)
@@ -367,7 +370,7 @@ def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
     :param embedding_range:
     :return A dict of weight matrix which defines the network
     """
-    rng = np.random.RandomState(89757)
+    rng = np.random.RandomState()
     # All parameters are saved in a dict
     params = dict()
     params["num_layers"] = len(hidden_size_list)
@@ -523,7 +526,7 @@ def Weight_SGD(weights, gradients, learn_rate=0.1, clip_norm=0):
     """
     if clip_norm > 0:
         grads_norm = gradients * gradients
-        clip_idx = grads_norm > clip_norm
+        clip_idx = grads_norm > clip_norm * clip_norm
         gradients[clip_idx] = clip_norm * gradients[clip_idx] / grads_norm[clip_idx]
     weights -= learn_rate * gradients
 
@@ -585,9 +588,9 @@ def Train(params, samples, epochs = 8, lr_decay=True):
             trained_samples += 1
             if trained_samples % 100 == 0:
                 t1 = time.time()
-                print "Average sentence log loss: %.5f" % log_loss / 1000.0,
+                print "Average sentence log loss: %.5f" % log_loss / 100.0,
                 print "\tword log loss: %.5f" % log_loss / float(trained_words),
-                print "\twords/s: %dk" % trained_words / 1000.0 / float(t1 - t0)
+                print "\twords/s: %.2fk" % trained_words / 1000.0 / float(t1 - t0)
                 log_loss = 0
                 trained_words = 0
                 t0 = t1
@@ -628,7 +631,6 @@ def Grad_check(params, sample):
     print "gradient check end"
 
 
-
 def Auto_grad(params, fluct_weights, sample):
     """This function refers to minFunc autoGrad function
     :param params:
@@ -653,9 +655,6 @@ def Auto_grad(params, fluct_weights, sample):
             W[i, j] += perturbation
     numerical_grad = (diff1 - diff2) / (2 * perturbation)
     return numerical_grad
-
-
-
 
 
 def Check_diff(params, grads, name, sample):

@@ -154,7 +154,7 @@ def Construct_LM_net(hidden_size_list, we_size, vocab_size, lstm_range=0.08,
     :param softmax_range:
     :return:
     """
-    rng = np.random.RandomState(9757)
+    rng = np.random.RandomState()
     # All parameters are saved in a dict
     params = dict()
     params["num_layers"] = len(hidden_size_list)

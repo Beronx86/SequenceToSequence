@@ -6,17 +6,17 @@ import SequenceToSequence as STS
 import LanguageModel as LM
 real = np.float64
 
-check_STS_2vocab = 1
-check_STS_1vocab = 0
+check_STS_2vocab = 0
+check_STS_1vocab = 1
 check_LM = 0
 check_softmax = 0
-rng = np.random.RandomState(89757)
+rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
     lm_time_steps = 7
     in_vocab_size = 27
     out_vocab_szie = 33
-    hidden_size_list = [8]
+    hidden_size_list = [8, 9]
     we_size = 19
     params = STS.Construct_net(hidden_size_list, we_size, in_vocab_size,
                                out_vocab_szie, embedding_range=1)
@@ -29,7 +29,7 @@ if check_STS_1vocab:
     em_time_steps = 11
     lm_time_steps = 9
     vocab_size = 27
-    hidden_size_list = [22]
+    hidden_size_list = [22, 17]
     we_size = 15
     params = STS.Construct_net(hidden_size_list, we_size, vocab_size,
                                embedding_range=1)
