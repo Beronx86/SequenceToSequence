@@ -47,7 +47,7 @@ def linear_prime(x):
     return y, y_prime
 
 
-def LSTM_feed_forward(weights, lower_output_acts, init=[]):
+def LSTM_feed_forward(weights, lower_output_acts, init=[], seq_lens=[]):
     """Feed forward a LSTM layer. This function also contains the feed forward
        between two layers. Specifically a lower layer output activations feed
        forward to this layer
@@ -81,6 +81,8 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
                through this arg. Note that when these values propagate from EM
                to LM, they are multiplied by LM recurrent weights
                Both are [layer_size,] vector
+       :param seq_lens:
+               Rectify hidden activations for different length sequence
 
        :returns output_acts Y: [time_steps, layer_size] matrix
                 states S: [time_steps, layer_size] matrix
@@ -99,11 +101,13 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     time_steps = len(lower_output_acts)
     input_size = lower_output_acts[0].shape[0]
     joint_size = layer_size + input_size + 1  # 1 for bias
+    batch_size = lower_output_acts[-1].shape[1]
     I, X, Y, S = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
     X_iota, Y_iota, Yp_iota = range(time_steps), range(time_steps), range(time_steps)
     X_phi, Y_phi, Yp_phi = range(time_steps), range(time_steps), range(time_steps)
     X_eta, Y_eta, Yp_eta = range(time_steps), range(time_steps), range(time_steps)
     G, Gp, H, Hp = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
+    seq_lens = np.asarray(seq_lens)
 
     prev_hidden = 0
     prev_states = 0
@@ -111,18 +115,28 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
         prev_hidden, prev_states = init
 
     for t in range(time_steps):
-        # batch size for different time steps may be different.
-        batch_size = lower_output_acts[t].shape[1]
         # Create the input vector
-        I[t] = np.zeros((joint_size, batch_size), dtype=real)
-        if t == 0:
-            I[t][0: layer_size] = prev_hidden
-            prev_S = prev_states
+        if seq_lens.shape[0] == 0:
+            not_start = 0
         else:
-            I[t][0: layer_size] = Y[t - 1]
-            prev_S = S[t - 1]
-        I[t][layer_size: layer_size + input_size] = lower_output_acts[t]
-        I[t][layer_size + input_size] = 1   # Bias
+            not_start = (t < time_steps - seq_lens)
+
+        I[t] = np.zeros((joint_size, batch_size), dtype=real)
+        if np.sum(not_start) == 0:
+            if t == 0:
+                I[t][0: layer_size] = prev_hidden
+                prev_S = prev_states
+            else:
+                I[t][0: layer_size] = Y[t - 1]
+                prev_S = S[t - 1]
+            I[t][layer_size: layer_size + input_size] = lower_output_acts[t]
+            I[t][layer_size + input_size] = 1   # Bias
+        else:
+            start = 1 - not_start
+            I[t][0: layer_size, start] = prev_hidden[:, start]
+            I[t][layer_size: layer_size + input_size, start] = lower_output_acts[t][:, start]
+            I[t][layer_size + input_size, start] = 1
+
         # Calculate input gate activations
         X_iota[t] = W_iota_y.dot(I[t]) + W_iota_s * prev_S
         Y_iota[t], Yp_iota[t] = logistic_prime(X_iota[t])
@@ -139,6 +153,21 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
         # Calculate cell outputs
         H[t], Hp[t] = tanh_prime(S[t])
         Y[t] = Y_eta[t] * H[t]
+        # Rectify the activations for not start sequences.
+        if np.sum(not_start) > 0:
+            Y_iota[t][:, not_start] = 0
+            Yp_iota[t][:, not_start] = 0
+            Y_phi[t][:, not_start] = 0
+            Yp_phi[t][:, not_start] = 0
+            G[t][:, not_start] = 0
+            Gp[t][:, not_start] = 0
+            S[t][:, not_start] = 0
+            Y_eta[:, not_start] = 0
+            Yp_eta[:, not_start] = 0
+            H[t][:, not_start] = 0
+            Hp[t][:, not_start] = 0
+            Y[t][:, not_start] = 0
+
     return Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I
 
 
@@ -297,14 +326,8 @@ def Input_feed_forward(W_we, word_idx_seq):
     :param W_we
     :param word_idx_seq: A sample mini-batch. It is a list of lists.
            The outer list is of length T and indexed by time. The inner list is
-           of lengths K and indexed by different samples. The sample lists may
-           of different length. When organizing the data, the samples are
-           ordered by decreasing length. If the sequence is not as long
-           as mini-batch length, just skip the elements in t time's sample list.
-           So the sequence lengths are encoded in sample list. In this way,
-           there is no need to add 0s. This is because different time steps are
-           in a list. There is no need to keep every element in the list the
-           same shape.
+           of lengths K and indexed by different samples. All the samples are
+           made to the same length.
     :return word_embedding_seq:
     """
     time_steps = len(word_idx_seq)
@@ -326,7 +349,7 @@ def Input_feed_backward(W_we, input_errors, word_idx_seq):
     Dg_we = np.zeros(W_we.shape, dtype=real)
     for t in reversed(range(time_steps)):
         word_idx = word_idx_seq[t]
-        Dg_we[:, word_idx] += input_errors[t]
+        Dg_we[:, word_idx] += input_errors[t][:, 0]
     return Dg_we
 
 
@@ -342,10 +365,10 @@ def Softmax_feed_fordward(W_o, lower_output_acts):
     layer_size = W_o.shape[0]
     joint_size = W_o.shape[1]
     input_size = W_o.shape[1] - 1   # 1 for Bias
+    batch_size = lower_output_acts[0].shape[1]
     # Softmax feed forward
     Y, X_o, Y_o = range(time_steps), range(time_steps), range(time_steps)
     for t in range(time_steps):
-        batch_size = lower_output_acts[t].shape[1]
         # Calculate the emission
         Y[t] = np.zeros((joint_size, batch_size), dtype=real)
         Y[t][:input_size] = lower_output_acts[t]
@@ -355,12 +378,16 @@ def Softmax_feed_fordward(W_o, lower_output_acts):
     return Y, Y_o
 
 
-def Softmax_feed_backward(W_o, inter_vals, target_idx_seq):
+def Softmax_feed_backward(W_o, inter_vals, target_idx_seq, seq_lens):
     """
     :param W_o:
     :param inter_vals:
     :param target_idx_seq: It is a list of lists and has the same shape as
            word_idx_seq
+    :param seq_lens: Record every sample length in the mini-batch. It the length
+           of a sample is smaller than that of the mini-batch, the gradients of
+           the excessive steps are all set to 0. So they have no impact on
+           training
     :return:
     """
     # Softmax feed backward
@@ -369,17 +396,22 @@ def Softmax_feed_backward(W_o, inter_vals, target_idx_seq):
     layer_size = W_o.shape[0]
     joint_size = W_o.shape[1]
     input_size = joint_size - 1
+    batch_size = Y[0].shape[1]
+    seq_lens = np.asarray(seq_lens)
     lower_input_errors = range(time_steps)
     Dg_o = np.zeros((layer_size, joint_size), dtype=real)
     batch_log_loss = 0
     for t in reversed(range(time_steps)):
-        batch_size = Y[t].shape[1]
         # A little different from Neubig's code
         Dl_o = Y_o[t] * 1
         Dl_o[target_idx_seq[t]] -= 1
+        # If t is larger than the length of a sample, this sample already end.
+        end = (t >= seq_lens)
+        Dl_o[:, end] = 0
         Dg_o += Dl_o.dot(Y[t].T)
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
-        # prevent log(0)
+        # Exclude the log values of the excessive time steps.
+        Y_o[t][:, end] = 1
         target_prob = np.maximum(Y_o[t][target_idx_seq, 0: batch_size], 1e-20)
         batch_log_loss -= np.sum(np.log(target_prob))
     return Dg_o, lower_input_errors, batch_log_loss
@@ -542,13 +574,12 @@ def Feed_forward_backward(params, in_word_idx_seq, out_word_idx_seq,
                                            in_we_errors, in_word_idx_seq)
     grads["W_we_out"] = Input_feed_backward(params["W_we_out"],
                                             out_we_errors, out_word_idx_seq)
-
     return grads, sent_log_loss
 
 
 # learn_rate strategy exists in a outer loop
 # error clip strategy is include in this function
-def Weight_SGD(weights, gradients, batch_size, learn_rate=0.1, clip_norm=0):
+def Weight_SGD(weights, gradients, learn_rate=0.1, clip_norm=0):
     """Change the one weight matrix. Not all the matrix
     :param weights:
     :param gradients:
@@ -560,10 +591,10 @@ def Weight_SGD(weights, gradients, batch_size, learn_rate=0.1, clip_norm=0):
         grads_norm = gradients * gradients
         clip_idx = grads_norm > clip_norm * clip_norm
         gradients[clip_idx] = clip_norm * gradients[clip_idx] / grads_norm[clip_idx]
-    weights -= learn_rate * gradients / batch_size
+    weights -= learn_rate * gradients
 
 
-def All_params_SGD(params, grads, batch_size, ff_learn_rate=0.7, lstm_learn_rate=0.7,
+def All_params_SGD(params, grads, ff_learn_rate=0.7, lstm_learn_rate=0.7,
                    lstm_clip_norm=5):
     """
     :param params:
@@ -573,23 +604,22 @@ def All_params_SGD(params, grads, batch_size, ff_learn_rate=0.7, lstm_learn_rate
     :param lstm_clip_norm:
     :return:
     """
-    Weight_SGD(params["W_o"], grads["W_o"], batch_size, learn_rate=ff_learn_rate)
-    Weight_SGD(params["W_we_in"], grads["W_we_in"], batch_size, learn_rate=ff_learn_rate)
-    Weight_SGD(params["W_we_out"], grads["W_we_out"], batch_size, learn_rate=ff_learn_rate)
+    Weight_SGD(params["W_o"], grads["W_o"], learn_rate=ff_learn_rate)
+    Weight_SGD(params["W_we_in"], grads["W_we_in"], learn_rate=ff_learn_rate)
+    Weight_SGD(params["W_we_out"], grads["W_we_out"], learn_rate=ff_learn_rate)
     for i in range(params["num_layers"]):
         em_layer_name = "em_LSTM_layer_" + str(i)
         lm_layer_name = "lm_LSTM_layer_" + str(i)
         for em_weights, em_gradients in zip(params[em_layer_name], grads[em_layer_name]):
-            Weight_SGD(em_weights, em_gradients, batch_size, learn_rate=lstm_learn_rate,
+            Weight_SGD(em_weights, em_gradients, learn_rate=lstm_learn_rate,
                        clip_norm=lstm_clip_norm)
         for lm_weights, lm_gradients in zip(params[lm_layer_name], grads[lm_layer_name]):
-            Weight_SGD(lm_weights, lm_gradients, batch_size, learn_rate=lstm_learn_rate,
+            Weight_SGD(lm_weights, lm_gradients, learn_rate=lstm_learn_rate,
                        clip_norm=lstm_clip_norm)
 
 
 # Did not use minibatch
-def Train(params, train_file, batch_size=128, epochs=8, lr_decay=True,
-          ff_lr=0.1, lstm_lr=0.7):
+def Train(params, samples, epochs = 8, lr_decay=True, ff_lr=0.1, lstm_lr=0.7):
     """
     :param params:
     :param samples: every sample is a list [in_word_idx_seq, outword_word_idx_seq,
@@ -604,25 +634,16 @@ def Train(params, train_file, batch_size=128, epochs=8, lr_decay=True,
         trained_samples = 0
         log_loss = 0
         trained_words = 0
-        train_f = open(train_file, "r")
         t0 = time.time()
         # If you want to do parallel computation. Train several samples and
         # accumulate the grads
-        while True:
-            lines = []
-            for i in range(batch_size):
-                line = train_f.readline()
-                if not line:
-                    train_file.seek(0)
-                    break
-                lines.append(line)
-            # process lines to samples.
+        for sample in samples:
             # Train the net
             grads, sent_ll = Feed_forward_backward(params, sample[0], sample[1],
                                                    sample[2])
-            All_params_SGD(params, grads, batch_size, ff_learn_rate=ff_lr,
+            All_params_SGD(params, grads, ff_learn_rate=ff_lr,
                            lstm_learn_rate=lstm_lr, lstm_clip_norm=5)
-            log_loss += sent_ll / batch_size
+            log_loss += sent_ll
             trained_words += len(sample[0]) + len(sample[1])
             # Out put some info
             trained_samples += 1
