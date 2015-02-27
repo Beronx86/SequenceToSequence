@@ -565,7 +565,7 @@ def All_params_SGD(params, grads, ff_learn_rate=0.7, lstm_learn_rate=0.7,
 
 
 # Did not use minibatch
-def Train(params, samples, epochs = 8, lr_decay=True):
+def Train(params, samples, epochs = 8, lr_decay=True, ff_lr=0.1, lstm_lr=0.7):
     """
     :param params:
     :param samples: every sample is a list [in_word_idx_seq, outword_word_idx_seq,
@@ -576,8 +576,6 @@ def Train(params, samples, epochs = 8, lr_decay=True):
     :return:
     """
     trained_epochs = 0
-    ff_lr = 0.1
-    lstm_lr = 0.7
     while True:
         trained_samples = 0
         log_loss = 0
@@ -597,9 +595,9 @@ def Train(params, samples, epochs = 8, lr_decay=True):
             trained_samples += 1
             if trained_samples % 100 == 0:
                 t1 = time.time()
-                print "Average sentence log loss: %.5f" % log_loss / 100.0,
-                print "\tword log loss: %.5f" % log_loss / float(trained_words),
-                print "\twords/s: %.2fk" % trained_words / 1000.0 / float(t1 - t0)
+                print "Average sentence log loss: %.5f" % (log_loss / 100.0),
+                print "\tword log loss: %.5f" % (log_loss / float(trained_words)),
+                print "\twords/s: %.2f" % (trained_words / float(t1 - t0))
                 log_loss = 0
                 trained_words = 0
                 t0 = t1
