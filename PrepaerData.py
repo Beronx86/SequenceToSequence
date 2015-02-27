@@ -94,6 +94,7 @@ def ConsturctSamples(src_sens, des_sens):
     for src, des in zip(src_sens, des_sens):
         sample = []
         in_sen = src[:-1]
+        in_sen = in_sen[::-1]
         out_sen = des[:-1]
         out_sen.insert(0, 0)  # insert <EOS> at position 0
         target_sen = des
