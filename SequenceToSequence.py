@@ -9,6 +9,7 @@
 # in words are embedding phase inputs, output words are language model phase
 # inputs
 # some code are redundant for clarity
+# 0 <NUL>  1 <EOS>  2 <UNK>
 
 import numpy as np
 from numpy.linalg import norm
@@ -23,7 +24,7 @@ real = np.float64
 # Softmax function
 def softmax(x):
     e = np.exp(x - np.max(x))  # prevent overflow
-    return e / np.sum(e)
+    return e / np.sum(e, axis=0)
 
 
 # Tanh and derivative
@@ -98,6 +99,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
     time_steps = len(lower_output_acts)
     input_size = lower_output_acts[0].shape[0]
     joint_size = layer_size + input_size + 1  # 1 for bias
+    batch_size = lower_output_acts[0].shape[1]
     I, X, Y, S = range(time_steps), range(time_steps), range(time_steps), range(time_steps)
     X_iota, Y_iota, Yp_iota = range(time_steps), range(time_steps), range(time_steps)
     X_phi, Y_phi, Yp_phi = range(time_steps), range(time_steps), range(time_steps)
@@ -111,7 +113,7 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[]):
 
     for t in range(time_steps):
         # Create the input vector
-        I[t] = np.zeros((joint_size, 1), dtype=real)
+        I[t] = np.zeros((joint_size, batch_size), dtype=real)
         if t == 0:
             I[t][0: layer_size] = prev_hidden
             prev_S = prev_states
@@ -292,13 +294,16 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
 def Input_feed_forward(W_we, word_idx_seq):
     """Transfer word_idx_seq to word_embedding_seq. The weights from
     :param W_we
-    :param word_idx_seq:
+    :param word_idx_seq: A sample mini-batch. It is a list of lists.
+           The outer list is of length T and indexed by time. The inner list is
+           of lengths K and indexed by different samples. All the samples are
+           made to the same length.
     :return word_embedding_seq:
     """
     time_steps = len(word_idx_seq)
     we_seq = range(time_steps)
     for t in range(time_steps):
-        we_seq[t] = np.asarray([W_we.T[word_idx_seq[t]]]).T
+        we_seq[t] = W_we[:, word_idx_seq[t]]    # Every column is a sample
     return we_seq
 
 
@@ -330,11 +335,12 @@ def Softmax_feed_fordward(W_o, lower_output_acts):
     layer_size = W_o.shape[0]
     joint_size = W_o.shape[1]
     input_size = W_o.shape[1] - 1   # 1 for Bias
+    batch_size = lower_output_acts[0].shape[1]
     # Softmax feed forward
     Y, X_o, Y_o = range(time_steps), range(time_steps), range(time_steps)
     for t in range(time_steps):
         # Calculate the emission
-        Y[t] = np.zeros((joint_size, 1), dtype=real)
+        Y[t] = np.zeros((joint_size, batch_size), dtype=real)
         Y[t][:input_size] = lower_output_acts[t]
         Y[t][-1] = 1    # 1 for Bias
         X_o[t] = W_o.dot(Y[t])
@@ -342,24 +348,43 @@ def Softmax_feed_fordward(W_o, lower_output_acts):
     return Y, Y_o
 
 
-def Softmax_feed_backward(W_o, inter_vals, target_idx_seq):
+def Softmax_feed_backward(W_o, inter_vals, target_idx_seq, seq_lens):
+    """
+    :param W_o:
+    :param inter_vals:
+    :param target_idx_seq: It is a list of lists and has the same shape as
+           word_idx_seq
+    :param seq_lens: Record every sample length in the mini-batch. It the length
+           of a sample is smaller than that of the mini-batch, the gradients of
+           the excessive steps are all set to 0. So they have no impact on
+           training
+    :return:
+    """
     # Softmax feed backward
     Y, Y_o = inter_vals
     time_steps = len(target_idx_seq)
     layer_size = W_o.shape[0]
     joint_size = W_o.shape[1]
     input_size = joint_size - 1
+    batch_size = Y[0].shape[1]
+    seq_lens = np.asarray(seq_lens)
     lower_input_errors = range(time_steps)
     Dg_o = np.zeros((layer_size, joint_size), dtype=real)
-    sent_log_loss = 0
+    batch_log_loss = 0
     for t in reversed(range(time_steps)):
         # A little different from Neubig's code
         Dl_o = Y_o[t] * 1
         Dl_o[target_idx_seq[t]] -= 1
+        # If t is larger than the length of a sample, this sample already end.
+        end = (t >= seq_lens)
+        Dl_o[:, end] = 0
         Dg_o += Dl_o.dot(Y[t].T)
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
-        sent_log_loss -= math.log(max(Y_o[t][target_idx_seq[t]], 1e-20))
-    return Dg_o, lower_input_errors, sent_log_loss
+        # Exclude the log values of the excessive time steps.
+        Y_o[t][:, end] = 1
+        target_prob = np.maximum(Y_o[t][target_idx_seq, 0: batch_size], 1e-20)
+        batch_log_loss -= np.sum(np.log(target_prob))
+    return Dg_o, lower_input_errors, batch_log_loss
 
 
 def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
