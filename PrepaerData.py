@@ -121,9 +121,9 @@ def ReadWithoutVocab(prefix, save_name):
     txt_path = save_name + ".txt"
     f = open(txt_path, "w")
     for s in samples:
-        for ss in s:
-            print >> f, ss
-        print >> f
+        ins = " ".join(s[0])
+        outs = " ".join(s[2])
+        print >> f, "%s|%s" % (ins, outs)
     f.close()
 
 
