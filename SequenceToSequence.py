@@ -439,12 +439,14 @@ def Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size=0,
     # Init in_vocab_word_embedding and out_vocab_word_embedding
     W_we_in = np.asarray(rng.uniform(low=-embedding_range, high=embedding_range,
                                      size=(we_size, in_vocab_size)), dtype=real)
+    W_we_in[:, 0] = 0   # Column 0 is <NUL>
     if out_vocab_size == 0:
         W_we_out = W_we_in
         out_vocab_size = in_vocab_size
     else:
         W_we_out = np.asarray(rng.uniform(low=-embedding_range, high=embedding_range,
                                           size=(we_size, out_vocab_size)), dtype=real)
+        W_we_out[:, 0] = 0  # Column 0 is <NUL>
     params["W_we_in"] = W_we_in
     params["W_we_out"] = W_we_out
     # Init sentence embedding LSTM weight matrix
@@ -648,15 +650,19 @@ def Construct_batch(lines):
         in_batch.append(b)
     for i in range(out_batch_len):
         b = []
+        b2 = []
         for j in range(num_samples):
             if i < out_seq_lens[j]:
                 b.append(targets[j][i])
+                if i == 0:
+                    b2.append(1)    # 1 for <EOS>
+                else:
+                    b2.append(targets[j][i - 1])
             else:
                 b.append(0)
+                b2.append(0)
         target_batch.append(b)
-    for i, b in enumerate(target_batch):
-        out_batch.append(b[:-1])
-        out_batch[i].insert(0, 0)  # Insert a <EOS> at the head of out seq
+        out_batch.append(b2)
     return in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens
 
 

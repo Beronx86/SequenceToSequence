@@ -11,8 +11,23 @@ check_STS_1vocab = 0
 check_LM = 0
 check_softmax = 0
 check_Generage = 0
-check_Beamsearch = 1
+check_Beamsearch = 0
+check_parallel = 1
 rng = np.random.RandomState()
+
+if check_parallel:
+    in_vocab_size = 20
+    out_vocab_size = 19
+    hidden_size_list = [8, 9]
+    we_size = 19
+    sample1 = "2 9 8 10 15 6 1|3 7 16 3 4 9 1"
+    sample2 = "19 3 7 1|17 13 1"
+    lines = [sample1, sample2]
+    in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens = STS.Construct_batch(lines)
+    params = STS.Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size)
+    STS.Feed_forward_backward(params, in_batch, out_batch, target_batch,
+                              in_seq_lens, out_seq_lens)
+
 if check_STS_2vocab:
     em_time_steps = 11
     lm_time_steps = 7

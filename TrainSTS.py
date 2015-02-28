@@ -7,8 +7,8 @@ f = open(pkl_file, "rb")
 print "Loading samples..."
 samples = pickle.load(f)
 f.close()
-in_vocab_size = 160001  # 1 for <UNK>
-out_vocab_size = 80001
+in_vocab_size = 16000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
+out_vocab_size = 8000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
 hidden_size_list = [1000, 1000, 1000]
 we_size = 1000
 embeding_range = 0.5 / we_size

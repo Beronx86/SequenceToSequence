@@ -4,6 +4,7 @@ import os
 from collections import Counter
 import pickle
 import string
+import numpy as np
 
 
 def LearnVocab(data_file, size=0, thres=0):
@@ -52,8 +53,9 @@ def Word2Idx(vocab):
         if word == "<EOS>":
             del vocab[i]
             break
-    vocab.insert(0, ("<UNK>", 1))
-    vocab.insert(0, ("<EOS>", 0))
+    vocab.insert(0, ("<UNK>", 2))
+    vocab.insert(0, ("<EOS>", 1))
+    vocab.insert(0, ("<NUL>", 0))
     word_idx = dict()
     idx_word = dict()
     for i in range(len(vocab)):
@@ -72,7 +74,7 @@ def Sen2Idx(data_file, word_idx):
             s.pop()
         s.append("<EOS>")
         for word in s:
-            idx = word_idx.get(word, 1)  # 1 is <UNK>
+            idx = word_idx.get(word, 2)  # 2 is <UNK>
             sen.append(idx)
         data.append(sen)
     return data
@@ -105,6 +107,23 @@ def ConsturctSamples(src_sens, des_sens):
     return samples
 
 
+def Arrange(l, idx_l):
+    tmp = l[0]
+    for i, v in enumerate(idx_l):
+        if i != v:
+            break
+
+
+def SortSamples(src_sens, des_sens):
+    len_l = []
+    for s, d in zip(src_sens, des_sens):
+        len_l.append(len(s) + len(d))
+    sorted_idx = [i[0] for i in sorted(enumerate(len_l), key=lambda x: x[1])]
+    sorted_src = [src_sens[i] for i in sorted_idx]
+    sorted_des = [des_sens[i] for i in sorted_idx]
+    return sorted_src, sorted_des, sorted_idx
+
+
 def ReadWithoutVocab(prefix, save_name):
     src_file = prefix + ".src"
     print "Reading source file:", src_file
@@ -113,17 +132,17 @@ def ReadWithoutVocab(prefix, save_name):
     print "Reading destiantion file:", des_file
     des_sens = ReadFile(des_file, 80000)
     print "Constructing samples"
-    samples = ConsturctSamples(src_sens, des_sens)
-    samples_path = save_name + ".pkl"
-    f = open(samples_path, "wb")
-    pickle.dump(samples, f)
-    f.close()
     txt_path = save_name + ".txt"
     f = open(txt_path, "w")
-    for s in samples:
-        ins = " ".join(s[0])
-        outs = " ".join(s[2])
+    sorted_src, sorted_des, sorted_idx = SortSamples(src_sens, des_sens)
+    for src, des in zip(sorted_src, sorted_des):
+        ins = " ".join(map(str, src))
+        outs = " ".join(map(str, des))
         print >> f, "%s|%s" % (ins, outs)
+    f.close()
+    f = open("idx.txt", "w")
+    for idx in sorted_idx:
+        print >> f, idx
     f.close()
 
 
