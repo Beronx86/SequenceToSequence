@@ -23,10 +23,11 @@ if check_parallel:
     sample1 = "2 9 8 10 15 6 1|3 7 16 3 4 9 1"
     sample2 = "19 3 7 1|17 13 1"
     lines = [sample1, sample2]
-    in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens = STS.Construct_batch(lines)
+    data = STS.Construct_batch(lines)
     params = STS.Construct_net(hidden_size_list, we_size, in_vocab_size, out_vocab_size)
-    STS.Feed_forward_backward(params, in_batch, out_batch, target_batch,
-                              in_seq_lens, out_seq_lens)
+    # STS.Feed_forward_backward(params, in_batch, out_batch, target_batch,
+    #                           in_seq_lens, out_seq_lens)
+    STS.Grad_check(params, data)
 
 if check_STS_2vocab:
     em_time_steps = 11

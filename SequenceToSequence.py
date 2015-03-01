@@ -122,18 +122,17 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[], in_seq_lens=[]):
             not_start = (t < time_steps - seq_lens)
 
         I[t] = np.zeros((joint_size, batch_size), dtype=real)
+        if t == 0:
+            I[t][0: layer_size] = prev_hidden
+            prev_S = prev_states
+        else:
+            I[t][0: layer_size] = Y[t - 1]
+            prev_S = S[t - 1]
         if np.sum(not_start) == 0:
-            if t == 0:
-                I[t][0: layer_size] = prev_hidden
-                prev_S = prev_states
-            else:
-                I[t][0: layer_size] = Y[t - 1]
-                prev_S = S[t - 1]
             I[t][layer_size: layer_size + input_size] = lower_output_acts[t]
             I[t][layer_size + input_size] = 1   # Bias
         else:
-            start = 1 - not_start
-            I[t][0: layer_size, start] = prev_hidden[:, start]
+            start = np.invert(not_start)
             I[t][layer_size: layer_size + input_size, start] = lower_output_acts[t][:, start]
             I[t][layer_size + input_size, start] = 1
 
@@ -159,14 +158,14 @@ def LSTM_feed_forward(weights, lower_output_acts, init=[], in_seq_lens=[]):
             Yp_iota[t][:, not_start] = 0
             Y_phi[t][:, not_start] = 0
             Yp_phi[t][:, not_start] = 0
-            G[t][:, not_start] = 0
+            # G[t][:, not_start] = 0
             Gp[t][:, not_start] = 0
-            S[t][:, not_start] = 0
-            Y_eta[:, not_start] = 0
-            Yp_eta[:, not_start] = 0
-            H[t][:, not_start] = 0
+            # S[t][:, not_start] = 0
+            Y_eta[t][:, not_start] = 0
+            Yp_eta[t][:, not_start] = 0
+            # H[t][:, not_start] = 0
             Hp[t][:, not_start] = 0
-            Y[t][:, not_start] = 0
+            # Y[t][:, not_start] = 0
 
     return Y, S, H, Hp, G, Gp, Y_eta, Yp_eta, Y_phi, Yp_phi, Y_iota, Yp_iota, I
 
@@ -276,7 +275,7 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         # Calculate the change in output gates
         Dl_eta = Yp_eta[t] * Eps * H[t]    # element wise multiplication
         Dg_eta_y += Dl_eta.dot(I[t].T)
-        Dg_eta_s += Dl_eta * S[t]
+        Dg_eta_s += np.sum(Dl_eta * S[t], axis=1).reshape(layer_size, 1)
         # Calculate the derivative of the error feed back to states
         dE = (Eps * Y_eta[t] * Hp[t] +  # states to cell output weights
               Dl_eta * W_eta_s +        # peepholes to forget gate
@@ -289,11 +288,11 @@ def LSTM_feed_backward(weights, inter_vars, input_errors=0, final=[], prev=[]):
         # Calculate the delta of forget gate
         Dl_phi = Yp_phi[t] * dE * prev_S
         Dg_phi_y += Dl_phi.dot(I[t].T)
-        Dg_phi_s += Dl_phi * prev_S
+        Dg_phi_s += np.sum(Dl_phi * prev_S, axis=1).reshape(layer_size, 1)
         # Calculate the delta of input gate
         Dl_iota = Yp_iota[t] * dE * G[t]
         Dg_iota_y += Dl_iota.dot(I[t].T)
-        Dg_iota_s += Dl_iota * prev_S
+        Dg_iota_s += np.sum(Dl_iota * prev_S, axis=1).reshape(layer_size, 1)
         # The errors inject to the previous time step
         Dl_recur_errors = W.T[0: layer_size].dot(Dl)
         Dl_eta_recur_errors = W_eta_y.T[0: layer_size].dot(Dl_eta)
@@ -404,7 +403,7 @@ def Softmax_feed_backward(W_o, inter_vals, target_idx_seq, out_seq_lens):
     for t in reversed(range(time_steps)):
         # A little different from Neubig's code
         Dl_o = Y_o[t] * 1
-        Dl_o[target_idx_seq[t]] -= 1
+        Dl_o[target_idx_seq[t], range(batch_size)] -= 1
         # If t is larger than the length of a sample, this sample already end.
         end = (t >= seq_lens)
         Dl_o[:, end] = 0
@@ -412,7 +411,8 @@ def Softmax_feed_backward(W_o, inter_vals, target_idx_seq, out_seq_lens):
         lower_input_errors[t] = W_o.T[0: input_size].dot(Dl_o)
         # Exclude the log values of the excessive time steps.
         Y_o[t][:, end] = 1
-        target_prob = np.maximum(Y_o[t][target_idx_seq, 0: batch_size], 1e-20)
+        target_prob = np.maximum(Y_o[t][target_idx_seq[t], range(batch_size)],
+                                 1e-20)
         batch_log_loss -= np.sum(np.log(target_prob))
     return Dg_o, lower_input_errors, batch_log_loss
 
@@ -523,13 +523,15 @@ def Feed_forward_backward(params, in_word_idx_seq, out_word_idx_seq,
         em_weights = params[em_layer_name]
         lm_weights = params[lm_layer_name]
         # Feed forward embedding layer
-        em_layer_ret = LSTM_feed_forward(em_weights, em_lower_output_acts, in_seq_lens)
+        em_layer_ret = LSTM_feed_forward(em_weights, em_lower_output_acts,
+                                         in_seq_lens=in_seq_lens)
         # Get lm initial hidden activations and states
         em_output_acts = em_layer_ret[0]
         em_states = em_layer_ret[1]
         lm_init = [em_output_acts[-1], em_states[-1]]
         # Feed forward lm layer, start form init activations and states
-        lm_layer_ret = LSTM_feed_forward(lm_weights, lm_lower_output_acts, lm_init)
+        lm_layer_ret = LSTM_feed_forward(lm_weights, lm_lower_output_acts,
+                                         lm_init)
         # Save the intermediate values for feed backward
         inter_vals[em_layer_name] = em_layer_ret
         inter_vals[lm_layer_name] = lm_layer_ret
@@ -732,7 +734,7 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
         trained_epochs += 1
 
 
-def Grad_check(params, sample):
+def Grad_check(params, data):
     """
     :param params:
     :param sample:
@@ -746,19 +748,20 @@ def Grad_check(params, sample):
         for f in files:
             os.remove(os.path.join("debug", f))
     print "start gradient check"
-    grads, _ = Feed_forward_backward(params, sample[0], sample[1], sample[2])
-    Check_diff(params, grads, "W_o", sample)
+    grads, _ = Feed_forward_backward(params, data[0], data[1], data[2],
+                                     data[3], data[4])
+    Check_diff(params, grads, "W_o", data)
     for i in reversed(range(params["num_layers"])):
         em_layer_name = "em_LSTM_layer_" + str(i)
         lm_layer_name = "lm_LSTM_layer_" + str(i)
-        Check_diff(params, grads, em_layer_name, sample)
-        Check_diff(params, grads, lm_layer_name, sample)
-    Check_diff(params, grads, "W_we_in", sample)
-    Check_diff(params, grads, "W_we_out", sample)
+        Check_diff(params, grads, em_layer_name, data)
+        Check_diff(params, grads, lm_layer_name, data)
+    Check_diff(params, grads, "W_we_in", data)
+    Check_diff(params, grads, "W_we_out", data)
     print "gradient check end"
 
 
-def Auto_grad(params, fluct_weights, sample):
+def Auto_grad(params, fluct_weights, data):
     """This function refers to minFunc autoGrad function
     :param params:
     :param fluct_weights: A weight matrix in params. It's ptr, change the
@@ -773,18 +776,18 @@ def Auto_grad(params, fluct_weights, sample):
     for i in range(W.shape[0]):
         for j in range(W.shape[1]):
             W[i, j] += perturbation
-            _, diff1[i, j] = Feed_forward_backward(params, sample[0], sample[1],
-                                                   sample[2])
+            _, diff1[i, j] = Feed_forward_backward(params, data[0], data[1],
+                                                   data[2], data[3], data[4])
             W[i, j] -= 2 * perturbation
-            _, diff2[i, j] = Feed_forward_backward(params, sample[0], sample[1],
-                                                   sample[2])
+            _, diff2[i, j] = Feed_forward_backward(params, data[0], data[1],
+                                                   data[2], data[3], data[4])
             # Restore the weight value at (i,j)
             W[i, j] += perturbation
     numerical_grad = (diff1 - diff2) / (2 * perturbation)
     return numerical_grad
 
 
-def Check_diff(params, grads, name, sample):
+def Check_diff(params, grads, name, data):
     """
     :param params:
     :param grads:
@@ -797,7 +800,7 @@ def Check_diff(params, grads, name, sample):
     sigFigs = 6
     if isinstance(params[name], list):
         for i, weights in enumerate(params[name]):
-            numDg = Auto_grad(params, weights, sample)
+            numDg = Auto_grad(params, weights, data)
             algDg = grads[name][i]
             diff = algDg - numDg
             minDg = np.minimum(np.abs(algDg), np.abs(numDg))
@@ -824,7 +827,7 @@ def Check_diff(params, grads, name, sample):
                 save_numDg_name = "%s_%s.succeeded.numDg.txt" % (name, weights_name[i])
                 np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
     else:
-        numDg = Auto_grad(params, params[name], sample)
+        numDg = Auto_grad(params, params[name], data)
         algDg = grads[name]
         diff = algDg - numDg
         minDg = np.minimum(np.abs(algDg), np.abs(numDg))
