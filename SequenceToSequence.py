@@ -18,7 +18,7 @@ import time
 import os
 import cPickle
 
-real = np.float64
+real = np.float32
 
 
 # Softmax function
@@ -690,13 +690,13 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
     :return:
     """
     trained_epochs = 0
+    line_counts = File_len(train_file)
+    total_batch = math.ceil(line_counts / batch_size)
+    train_f = open(train_file, 'r')
     while True:
         trained_batch = 0
         log_loss = 0
         trained_words = 0
-        line_counts = File_len(train_file)
-        total_batch = math.ceil(line_counts / batch_size)
-        train_f = open(train_file, 'r')
         t0 = time.time()
         while True:
             lines = []
@@ -708,14 +708,15 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
                     trained_batch = 0
                     break
                 lines.append(line)
+            cur_batch_size = len(lines)
             in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens = Construct_batch(lines)
             # Train the net
             grads, sent_ll = Feed_forward_backward(params, in_batch, out_batch,
                                                    target_batch, in_seq_lens, out_seq_lens)
-            All_params_SGD(params, grads, batch_size, ff_learn_rate=ff_lr,
+            All_params_SGD(params, grads, cur_batch_size, ff_learn_rate=ff_lr,
                            lstm_learn_rate=lstm_lr, lstm_clip_norm=5)
             log_loss += sent_ll
-            trained_words += (max(in_seq_lens) + max(out_seq_lens)) * batch_size
+            trained_words += (max(in_seq_lens) + max(out_seq_lens)) * cur_batch_size
             # Out put some info
             trained_batch += 1
             if trained_batch % 10 == 0:

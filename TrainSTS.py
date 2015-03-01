@@ -5,10 +5,10 @@ import pickle
 pkl_file = "./train.pkl"
 f = open(pkl_file, "rb")
 print "Loading samples..."
-samples = pickle.load(f)
+train_file = "train.txt"
 f.close()
-in_vocab_size = 16000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
-out_vocab_size = 8000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
+in_vocab_size = 160000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
+out_vocab_size = 80000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
 hidden_size_list = [1000, 1000, 1000]
 we_size = 1000
 embeding_range = 0.5 / we_size
@@ -16,6 +16,6 @@ print "Initializing networks..."
 params = STS.Construct_net(hidden_size_list, we_size, in_vocab_size,
                            out_vocab_size, embedding_range=embeding_range)
 print "Start training..."
-STS.Train(params, samples, lstm_lr=0.1)
+STS.Train(params, train_file, ff_lr=0.1, lstm_lr=0.7)
 print "Saving parameters..."
 STS.Save_params(params, "pc4.pkl")
