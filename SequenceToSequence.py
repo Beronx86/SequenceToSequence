@@ -338,7 +338,6 @@ def Input_feed_forward(W_we, word_idx_seq):
 
 def Input_feed_backward(W_we, input_errors, word_idx_seq):
     """
-
     :param W_we:
     :param input_errors:
     :param word_idx_seq:
@@ -348,7 +347,11 @@ def Input_feed_backward(W_we, input_errors, word_idx_seq):
     Dg_we = np.zeros(W_we.shape, dtype=real)
     for t in reversed(range(time_steps)):
         word_idx = word_idx_seq[t]
-        Dg_we[:, word_idx] += input_errors[t][:, 0]
+        # Dg_we[:, word_idx] += input_errors[t]
+        # If different samples include the same word at the same time, the above
+        # line is wrong.
+        for i, wi in enumerate(word_idx):
+            Dg_we[:, wi] += input_errors[t][:, i]
     return Dg_we
 
 
