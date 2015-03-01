@@ -679,8 +679,8 @@ def File_len(fname):
     return i + 1
 
 # Did not use minibatch
-def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
-          ff_lr=0.1, lstm_lr=0.7):
+def Train(params, train_file, valid_file, test_file, batch_size=128, epochs=8,
+          decay_epoch=5, lr_decay=True, ff_lr=0.1, lstm_lr=0.7):
     """
     :param params:
     :param samples: every sample is a list [in_word_idx_seq, outword_word_idx_seq,
@@ -694,6 +694,7 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
     line_counts = File_len(train_file)
     total_batch = math.ceil(line_counts / batch_size)
     train_f = open(train_file, 'r')
+    output_batch_num = 100
     while True:
         trained_batch = 0
         log_loss = 0
@@ -709,26 +710,34 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
                     trained_batch = 0
                     break
                 lines.append(line)
+            if len(lines) == 0:
+                break
             cur_batch_size = len(lines)
             in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens = Construct_batch(lines)
             # Train the net
-            grads, sent_ll = Feed_forward_backward(params, in_batch, out_batch,
-                                                   target_batch, in_seq_lens, out_seq_lens)
+            grads, batch_ll = Feed_forward_backward(params, in_batch, out_batch,
+                                                    target_batch, in_seq_lens, out_seq_lens)
             All_params_SGD(params, grads, cur_batch_size, ff_learn_rate=ff_lr,
                            lstm_learn_rate=lstm_lr, lstm_clip_norm=5)
-            log_loss += sent_ll
+            log_loss += batch_ll
             trained_words += (max(in_seq_lens) + max(out_seq_lens)) * cur_batch_size
             # Out put some info
             trained_batch += 1
-            if trained_batch % 10 == 0:
+            if trained_batch % output_batch_num == 0:
                 t1 = time.time()
-                print "Average sentence log loss: %.5f" % (log_loss / (10.0 * batch_size)),
+                print "Average sentence log loss: %.5f" % (log_loss / float(output_batch_num * batch_size)),
                 print "\tword log loss: %.5f" % (log_loss / float(trained_words)),
                 print "\twords/s: %.2f" % (trained_words / float(t1 - t0))
                 log_loss = 0
                 trained_words = 0
                 t0 = t1
-            if trained_epochs >= 5:
+                valid_sen_ll, valid_word_ll = Calculate_ll(params, valid_file, batch_size)
+                test_sen_ll, test_word_ll = Calculate_ll(params, test_file, 10)
+                print "Valid sentence log loss: %.5f\tword log loss %.5f" % \
+                      (valid_sen_ll, valid_word_ll)
+                print "Test sentence log loss: %.5f\tword log loss %.5f" % \
+                      (test_sen_ll, test_word_ll)
+            if trained_epochs >= decay_epoch:
                 # half samples clip
                 if trained_batch == total_batch / 2:
                     ff_lr /= 2
@@ -737,6 +746,32 @@ def Train(params, train_file, batch_size=128, epochs = 8, lr_decay=True,
                     ff_lr /= 2
                     lstm_lr /= 2
         trained_epochs += 1
+        Save_params(params, "STS_epoch_" + str(trained_epochs) + ".pkl")
+        if trained_epochs > epochs:
+            break
+
+
+def Calculate_ll(params, file_name, batch_size):
+    f = open(file_name, "r")
+    total_ll = 0
+    total_words = 0
+    line_counts = File_len(file_name)
+    while True:
+        lines = []
+        for i in range(batch_size):
+            line = f.readline()
+            if not line:
+                break
+            lines.append(line)
+        if len(lines) == 0:
+            break
+        cur_batch_size = len(lines)
+        in_batch, out_batch, target_batch, in_seq_lens, out_seq_lens = Construct_batch(lines)
+        _, batch_ll = Feed_forward_backward(params, in_batch, out_batch,
+                                            target_batch, in_seq_lens, out_seq_lens)
+        total_ll += batch_ll
+        total_words += (max(in_seq_lens) + max(out_seq_lens)) * cur_batch_size
+    return total_ll / line_counts, total_ll / total_words
 
 
 def Grad_check(params, data):

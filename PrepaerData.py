@@ -83,12 +83,8 @@ def Sen2Idx(data_file, word_idx):
 def ReadFile(data_file, vocab_size):
     vocab = LearnVocab(data_file, vocab_size)
     word_idx, idx_word = Word2Idx(vocab)
-    f = open("word_idx.pkl", "wb")
-    pickle.dump(word_idx, f)
-    pickle.dump(idx_word, f)
-    f.close()
     sens = Sen2Idx(data_file, word_idx)
-    return sens
+    return sens, word_idx, idx_word
 
 
 def SortSamples(src_sens, des_sens):
@@ -127,10 +123,10 @@ def FilterBad(sorted_src, sorted_des):
 def ReadWithoutVocab(prefix, save_name):
     src_file = prefix + ".src"
     print "Reading source file:", src_file
-    src_sens = ReadFile(src_file, 160000)
+    src_sens, src_dic, src_idx_word = ReadFile(src_file, 160000)
     des_file = prefix + ".des"
     print "Reading destiantion file:", des_file
-    des_sens = ReadFile(des_file, 80000)
+    des_sens, des_dic, des_idx_word = ReadFile(des_file, 80000)
     print "Constructing samples"
     txt_path = save_name + ".txt"
     f = open(txt_path, "w")
@@ -143,16 +139,39 @@ def ReadWithoutVocab(prefix, save_name):
         outs = " ".join(map(str, des))
         print >> f, "%s|%s" % (ins, outs)
     f.close()
-    f = open("idx.txt", "w")
-    for idx in sorted_idx:
-        print >> f, idx
-    f.close()
-    f = open("del_idx.txt", "w")
-    for idx in deleted_idx:
-        print >> f, idx, sorted_idx[idx]
+    file_name = os.path.basename(prefix)
+    dic_name = file_name + "_dicts" + ".pkl"
+    f = open(dic_name, 'w')
+    pickle.dump(src_dic, f)
+    pickle.dump(des_dic, f)
+    pickle.dump(src_idx_word, f)
+    pickle.dump(des_idx_word, f)
+    f.close
+    return src_dic, des_dic
+
+
+def ReadWithVocab(prefix, save_name, src_dic, des_dic):
+    src_file = prefix + ".src"
+    src_sens = Sen2Idx(src_file, src_dic)
+    des_file = prefix + ".des"
+    des_sens = Sen2Idx(des_file, des_dic)
+    txt_path = save_name + ".txt"
+    f = open(txt_path, "w")
+    sorted_src, sorted_des, sorted_idx = SortSamples(src_sens, des_sens)
+    FilterBad(sorted_src, sorted_des)
+    for src, des in zip(sorted_src, sorted_des):
+        ins = " ".join(map(str, src))
+        outs = " ".join(map(str, des))
+        print >> f, "%s|%s" % (ins, outs)
     f.close()
 
 
 if __name__ == "__main__":
-    train_prefix = r"D:\WMT\bitexts.pc4\wmt_all_pc4"
-    ReadWithoutVocab(train_prefix, "train")
+    train_prefix = r"D:\WMT\bitexts.pc2\wmt_all_pc2"
+    valid_prefix = r"D:\WMT\dev+test\ntst1213"
+    test_prefix = r"D:\WMT\dev+test\ntst14"
+    src_dic, des_dic = ReadWithoutVocab(train_prefix, "train")
+    print "Reading valid file..."
+    ReadWithVocab(valid_prefix, "valid", src_dic, des_dic)
+    print "Reading test file..."
+    ReadWithVocab(test_prefix, "test", src_dic, des_dic)
