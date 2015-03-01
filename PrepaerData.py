@@ -91,29 +91,6 @@ def ReadFile(data_file, vocab_size):
     return sens
 
 
-def ConsturctSamples(src_sens, des_sens):
-    samples = []
-    for src, des in zip(src_sens, des_sens):
-        sample = []
-        in_sen = src[:-1]
-        in_sen = in_sen[::-1]
-        out_sen = des[:-1]
-        out_sen.insert(0, 0)  # insert <EOS> at position 0
-        target_sen = des
-        sample.append(in_sen)
-        sample.append(out_sen)
-        sample.append(target_sen)
-        samples.append(sample)
-    return samples
-
-
-def Arrange(l, idx_l):
-    tmp = l[0]
-    for i, v in enumerate(idx_l):
-        if i != v:
-            break
-
-
 def SortSamples(src_sens, des_sens):
     len_l = []
     for s, d in zip(src_sens, des_sens):
@@ -122,6 +99,29 @@ def SortSamples(src_sens, des_sens):
     sorted_src = [src_sens[i] for i in sorted_idx]
     sorted_des = [des_sens[i] for i in sorted_idx]
     return sorted_src, sorted_des, sorted_idx
+
+
+def FilterBad(sorted_src, sorted_des):
+    pre_src = []
+    pre_des = []
+    deleted_idx = []
+    length = len(sorted_src)
+    for i in reversed(range(length)):
+        cur_src = sorted_src[i]
+        cur_des = sorted_des[i]
+        if len(cur_src) == 1 or len(cur_des) == 1:
+            del sorted_src[i]
+            del sorted_des[i]
+            deleted_idx.append(i)
+        elif (len(pre_src) == len(cur_src) and len(pre_des) == len(cur_des) and
+              pre_src == cur_src and pre_des == cur_des):
+            del sorted_src[i]
+            del sorted_des[i]
+            deleted_idx.append(i)
+        else:
+            pre_src = cur_src
+            pre_des = cur_des
+    return deleted_idx
 
 
 def ReadWithoutVocab(prefix, save_name):
@@ -135,6 +135,9 @@ def ReadWithoutVocab(prefix, save_name):
     txt_path = save_name + ".txt"
     f = open(txt_path, "w")
     sorted_src, sorted_des, sorted_idx = SortSamples(src_sens, des_sens)
+    print "Removing bad samples"
+    deleted_idx = FilterBad(sorted_src, sorted_des)
+    print "%d samples removed" % len(deleted_idx)
     for src, des in zip(sorted_src, sorted_des):
         ins = " ".join(map(str, src))
         outs = " ".join(map(str, des))
@@ -143,6 +146,10 @@ def ReadWithoutVocab(prefix, save_name):
     f = open("idx.txt", "w")
     for idx in sorted_idx:
         print >> f, idx
+    f.close()
+    f = open("del_idx.txt", "w")
+    for idx in deleted_idx:
+        print >> f, idx, sorted_idx[idx]
     f.close()
 
 

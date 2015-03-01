@@ -7,7 +7,7 @@ f = open(pkl_file, "rb")
 print "Loading samples..."
 train_file = "train.txt"
 f.close()
-in_vocab_size = 160000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
+in_vocab_size = 160000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>, <EOS> is included in 160000
 out_vocab_size = 80000 + 1 + 1   # 1 for <UNK>, 1 for <NUL>
 hidden_size_list = [1000, 1000, 1000]
 we_size = 1000

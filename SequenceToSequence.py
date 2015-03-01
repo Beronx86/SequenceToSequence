@@ -634,6 +634,7 @@ def Construct_batch(lines):
     for line in lines:
         ls = line.split("|")
         i = map(int, ls[0].split()[:-1])    # Do not include the <EOS>
+        i = i[::-1]     # Reverse the order of input
         o = map(int, ls[1].split())
         in_seq_lens.append(len(i))
         out_seq_lens.append(len(o))
