@@ -192,6 +192,3 @@ def Construct_LM_net(hidden_size_list, we_size, vocab_size, lstm_range=0.08,
                                  size=(layer_size, joint_size)), dtype=real)
     params["W_o"] = W_o
     return params
-
-
-
