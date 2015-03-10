@@ -15,7 +15,8 @@ check_softmax = 0
 check_Generage = 0
 check_Beamsearch = 0
 check_Cos = 0
-check_Pool = 1
+check_Pool = 0
+check_BLSTM_Cos = 1
 rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
@@ -276,3 +277,21 @@ if check_Pool:
             np.savetxt(os.path.join("debug", save_algDg_name), algDg[i], "%+.6e")
             save_numDg_name = "%s.succeeded.numDg.txt" % name[i]
             np.savetxt(os.path.join("debug", save_numDg_name), numDg[i], "%+.6e")
+
+if check_BLSTM_Cos:
+    dim = 5
+    len_1 = 17
+    len_2 = 12
+    seq_1 = []
+    seq_2 = []
+    is_pos = True
+    pool_len = 3
+    average = False
+    for i in range(len_1):
+        seq_1.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    for i in range(len_2):
+        seq_2.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    hidden_size_list = [8, 9]
+    mode = [True, 3, False]
+    params = EC.Construct_net(hidden_size_list, dim)
+    EC.Gradient_check(params, seq_1, seq_2, mode)
