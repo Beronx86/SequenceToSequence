@@ -565,7 +565,7 @@ def All_params_SGD(params, grads, ff_learn_rate=0.7, lstm_learn_rate=0.7,
 
 
 # Did not use minibatch
-def Train(params, samples, epochs = 8, lr_decay=True, ff_lr=0.1, lstm_lr=0.7):
+def Train(params, samples, epochs=8, lr_decay=True, ff_lr=0.1, lstm_lr=0.7):
     """
     :param params:
     :param samples: every sample is a list [in_word_idx_seq, outword_word_idx_seq,

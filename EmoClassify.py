@@ -263,7 +263,19 @@ def Construct_net(hidden_size_list, in_size, init_range=0.1):
     return params
 
 
-def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3, avg=False):
+def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3,
+                          avg=False, mode=0):
+    """
+    :type params: dict
+    :type in_seq_1: list
+    :type in_seq_2: list
+    :type is_pos: bool
+    :type pool_len: int
+    :type avg: bool
+    :param mode:  mode=0 feed forward and backward
+                  mode=1 feed forward for valid and test samples
+    :return:
+    """
     inter_vals = dict()
     grads = dict()
     # feed forward seq 1 & 2
@@ -284,6 +296,8 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3, avg=Fa
         lower_acts_2 = ret_2[0]
     loss, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
                                                            is_pos, pool_len, avg)
+    if mode == 1:
+        return loss
     in_err_1 = Dl_out_s1
     in_err_2 = Dl_out_s2
     for i in reversed(range(params["num_layers"])):
@@ -302,6 +316,16 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3, avg=Fa
         in_err_1 = ret_1[2]
         in_err_2 = ret_2[2]
     return grads, loss
+
+
+def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5):
+    for i in range(params["num_layers"]):
+        f_layer_name = "LSTM_layer_f" + str(i)
+        b_layer_name = "LSTM_layer_b" + str(i)
+        for W, g in zip(params[f_layer_name], grads[f_layer_name]):
+            STS.Weight_SGD(W, g, learn_rate, clip_norm)
+        for W, g in zip(params[b_layer_name], grads[b_layer_name]):
+            STS.Weight_SGD(W, g, learn_rate, clip_norm)
 
 
 def Gradient_check(params, seq_1, seq_2, mode):
