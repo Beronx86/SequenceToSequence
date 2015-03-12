@@ -434,3 +434,48 @@ def Check_diff(params, grads, name, seq_1, seq_2, mode):
             np.savetxt(os.path.join("debug", save_algDg_name), algDg, "%+.6e")
             save_numDg_name = "%s.succeeded.numDg.txt" % name
             np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+
+
+def Pool_feed_forward_single(in_seq_1, pool_len, average):
+    max_idx_1 = []
+    if pool_len == 0:
+        feature_vec_1 = 0
+        for v in in_seq_1:
+            feature_vec_1 += v
+        if average:
+            feature_vec_1 /= len(in_seq_1)
+        feature_vec_1 = feature_vec_1.reshape(-1)
+    else:
+        feature_dim = in_seq_1[0].shape[0]
+        frame_idx_1 = Calculate_frame_idx(len(in_seq_1), pool_len)
+        feature_mtx_1 = np.zeros((len(in_seq_1), feature_dim), dtype=real)
+        for i, v in enumerate(in_seq_1):
+            feature_mtx_1[i] = in_seq_1[i][:, 0]
+        feature_vec_1 = np.zeros((feature_dim * pool_len), dtype=real)
+        if average:
+            for i in range(pool_len):
+                s = feature_dim * i
+                e = s + feature_dim
+                feature_vec_1[s: e] = np.average(feature_mtx_1[frame_idx_1[i]: frame_idx_1[i + 1]], axis=0)
+        else:
+            for i in range(pool_len):
+                s = feature_dim * i
+                e = s + feature_dim
+                feature_vec_1[s: e] = np.max(feature_mtx_1[frame_idx_1[i]: frame_idx_1[i + 1]], axis=0)
+                # In max pooling back propagation, only errors only propagate to
+                # max units.
+                max_idx_1.append(np.argmax(feature_mtx_1[frame_idx_1[i]: frame_idx_1[i + 1]],
+                                           axis=0) + frame_idx_1[i])
+    return feature_vec_1, max_idx_1
+
+
+def Extract_feature(params, in_seq, pool_len, avg=False):
+    lower_acts = in_seq
+    for i in range(params["num_layers"]):
+        f_layer_name = "LSTM_layer_f" + str(i)
+        b_layer_name = "LSTM_layer_b" + str(i)
+        ret = Bi_LSTM_feed_forward(params[f_layer_name], params[b_layer_name],
+                                   lower_acts)
+        lower_acts = ret[0]
+    feature_vec = Pool_feed_forward_single(lower_acts, pool_len, avg)
+    return feature_vec

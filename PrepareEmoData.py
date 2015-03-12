@@ -41,8 +41,7 @@ valids_per_class = 50
 
 
 def generate_pair(emolist_1, emolist_2=0):
-    """
-    :param emo_1:
+    """ :param emo_1:
     :param emo_2: if emo_2 == 0, generate positive sample
     :return:
     """
@@ -69,12 +68,14 @@ for emo in use_emo:
         train_pair.append(generate_pair(emo_dic[emo]))
     for i in range(valids_per_class):
         valid_pair.append(generate_pair(valid_dic[emo]))
-for emo_1 in use_emo:
-    for emo_2 in use_emo:
-        for i in range(trains_per_class):
-            train_pair.append(generate_pair(emo_dic[emo_1], emo_dic[emo_2]))
-        for i in range(valids_per_class):
-            valid_pair.append(generate_pair(emo_dic[emo_1], emo_dic[emo_2]))
+for i in range(len(use_emo)):
+    for j in range(i, len(use_emo)):
+        for k in range(trains_per_class):
+            train_pair.append(generate_pair(emo_dic[use_emo[i]],
+                                            emo_dic[use_emo[j]]))
+        for k in range(valids_per_class):
+            valid_pair.append(generate_pair(emo_dic[use_emo[i]],
+                                            emo_dic[use_emo[j]]))
 
 tv_f = open("train_valid_list.pkl", "wb")
 cPickle.dump(train_pair, tv_f)
@@ -85,9 +86,10 @@ cPickle.dump(test_dic, t_f)
 t_f.close()
 
 f = open("train_valid_list.txt", "w")
-print >> f, "train_list"
+print >> f, "train_list", len(train_pair)
 for p in train_pair:
     print >> f, p
+print >> f, "valid_list", len(valid_pair)
 for p in valid_pair:
     print >> f, p
 f.close()
