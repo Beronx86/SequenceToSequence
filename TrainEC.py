@@ -232,4 +232,3 @@ if __name__ == "__main__":
     Train_multiprocess(params, train_pairs, valid_pairs, csv_dir, pool_len=3,
                        average=False, lr=0.1, epoches=100, lr_halve_times=8,
                        mini_batch=100, process_num=20)
-
