@@ -6,6 +6,7 @@ import os
 import numpy as np
 import multiprocessing
 from collections import defaultdict
+from random import shuffle
 
 
 def Train(params, train_list, valid_list, csv_dir, pool_len=3,
@@ -67,21 +68,24 @@ def Load_Feed(csv_dir, pair, params, pool_len, average, mode=0):
 
 def Train_multiprocess(params, train_list, valid_list, csv_dir, pool_len=3,
                        average=False, epoches=8, lr=0.1, cl=5, lr_halve_times=5,
-                       num_cores=20):
+                       mini_batch=100, process_num=20):
     multiprocessing.freeze_support()
     train_epoch = 1
-    pp_span = 10
+    pp_span = 2
     best_epoch_loss = 1e9
     ht = 0
     while train_epoch <= epoches:
+        print "Epoch %d, shuffling samples" % train_epoch
+        shuffle(train_list)  # shuffle samples
+        print "Start training epoch %d" % train_epoch
         t0 = time.time()
         pp_loss = 0
-        for i in range(len(train_list) / num_cores):
+        for i in range(len(train_list) / mini_batch):
             grads = defaultdict(list)
-            pool = multiprocessing.Pool(processes=num_cores)
+            pool = multiprocessing.Pool(processes=process_num)
             results = []
-            for j in range(num_cores):
-                pair = train_list[i * num_cores + j]
+            for j in range(mini_batch):
+                pair = train_list[i * mini_batch + j]
                 results.append(pool.apply_async(Load_Feed, (csv_dir, pair,
                                params, pool_len, average)))
             pool.close()
@@ -97,22 +101,22 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir, pool_len=3,
                         grads[k] = p_grads[k]
             for k in grads.keys():
                 for idx_g in range(len(grads[k])):
-                    grads[k][idx_g] /= num_cores
+                    grads[k][idx_g] /= mini_batch
             EC.All_params_SGD(params, grads, lr, cl)
             if i % pp_span == 0 and i != 0:
                 t1 = time.time()
-                print "\tAverage loss: %.5f" % (pp_loss /
-                                                 float(pp_span * num_cores)),
-                print "\tsamples per sec %.2f" % (pp_span * num_cores /
+                print "\tAverage loss: %.12f" % (pp_loss /
+                                                 float(pp_span * mini_batch)),
+                print "\tsamples per sec %.2f" % (pp_span * mini_batch /
                                                   float(t1 - t0))
                 t0 = t1
                 pp_loss = 0
-        tmp_cores = len(train_list) - (len(train_list) / num_cores * num_cores)
-        if tmp_cores > 0:
-            pool = multiprocessing.Pool(processes=tmp_cores)
+        rest_num = len(train_list) - (len(train_list) / mini_batch * mini_batch)
+        if rest_num > 0:
+            pool = multiprocessing.Pool(processes=process_num)
             results = []
             grads = defaultdict(list)
-            for i in range((len(train_list) / num_cores * num_cores),
+            for i in range((len(train_list) / mini_batch * mini_batch),
                            len(train_list)):
                 pair = train_list[i]
                 results.append(pool.apply_async(Load_Feed, (csv_dir, pair,
@@ -129,11 +133,12 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir, pool_len=3,
                         grads[k] = p_grads[k]
             for k in grads.keys():
                 for idx_g in range(len(grads[k])):
-                    grads[k][idx_g] /= tmp_cores
+                    grads[k][idx_g] /= rest_num
             EC.All_params_SGD(params, grads, lr, cl)
         valid_loss = Calculate_loss_multiprocess(params, valid_list, csv_dir,
-                                                 pool_len, average, num_cores)
-        print "Epoch %d \t Average valid loss: %.5f" % (train_epoch, valid_loss)
+                                                 pool_len, average, mini_batch,
+                                                 process_num)
+        print "Epoch %d \t Average valid loss: %.12f" % (train_epoch, valid_loss)
         Save_params(params, "save_params", train_epoch)
         if valid_loss > best_epoch_loss and ht < lr_halve_times:
             lr /= 2
@@ -165,24 +170,24 @@ def Calculate_loss(params, valid_list, csv_dir, pool_len, average):
 
 
 def Calculate_loss_multiprocess(params, valid_list, csv_dir, pool_len, average,
-                                num_cores):
+                                mini_batch, process_num):
     total_loss = 0
-    for i in range(len(valid_list) / num_cores):
+    for i in range(len(valid_list) / mini_batch):
         results = []
-        pool = multiprocessing.Pool(processes=num_cores)
-        for j in range(num_cores):
-            pair = valid_list[i * num_cores + j]
+        pool = multiprocessing.Pool(processes=process_num)
+        for j in range(mini_batch):
+            pair = valid_list[i * mini_batch + j]
             results.append(pool.apply_async(Load_Feed, (csv_dir, pair, params,
                            pool_len, average, 1)))  # mode=1
         pool.close()
         pool.join()
         for loss in results:
             total_loss += loss.get()
-    temp_cores = len(valid_list) - len(valid_list) / num_cores * num_cores
-    if temp_cores > 0:
-        pool = multiprocessing.Pool(processes=temp_cores)
+    rest_num = len(valid_list) - len(valid_list) / mini_batch * mini_batch
+    if rest_num > 0:
+        pool = multiprocessing.Pool(processes=process_num)
         results = []
-        for i in range(len(valid_list) / num_cores * num_cores,
+        for i in range(len(valid_list) / mini_batch * mini_batch,
                        len(valid_list)):
             pair = valid_list[i]
             results.append(pool.apply_async(Load_Feed, (csv_dir, pair, params,
@@ -210,7 +215,8 @@ def Load_pair(csv_dir, pair):
 
 
 if __name__ == "__main__":
-    pkl = open("train_valid_list.pkl", "rb")
+    pkl_name = r"D:\EclipseProjects\SequenceToSequence\\train_valid_list.pkl"
+    pkl = open(pkl_name, "rb")
     train_pairs = cPickle.load(pkl)
     valid_pairs = cPickle.load(pkl)
     # train_pairs = train_pairs[:17]
@@ -222,6 +228,8 @@ if __name__ == "__main__":
     params = EC.Construct_net(hidden_size_list, in_dim)
     # Train(params, train_pairs, valid_pairs, csv_dir, pool_len=3, average=False,
     #       epochs=30)
+    print "Start Training"
     Train_multiprocess(params, train_pairs, valid_pairs, csv_dir, pool_len=3,
-                       average=False, lr=0.5, epoches=100, num_cores=20)
+                       average=False, lr=0.1, epoches=100, lr_halve_times=8,
+                       mini_batch=100, process_num=20)
 
