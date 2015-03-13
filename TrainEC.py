@@ -66,8 +66,10 @@ def Load_Feed(csv_dir, pair, params, pool_len, average, mode=0):
         return loss
 
 
-def Train_multiprocess(params, train_list, valid_list, csv_dir, pool_len=3,
-                       average=False, epoches=8, lr=0.1, cl=5, lr_halve_times=5,
+def Train_multiprocess(params, train_list, valid_list, csv_dir,
+                       save_dir="save_params",
+                       pool_len=3, average=False, epoches=8,
+                       lr=0.1, cl=5, lr_halve_times=5,
                        mini_batch=100, process_num=20):
     multiprocessing.freeze_support()
     train_epoch = 1
@@ -139,7 +141,7 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir, pool_len=3,
                                                  pool_len, average, mini_batch,
                                                  process_num)
         print "Epoch %d \t Average valid loss: %.12f" % (train_epoch, valid_loss)
-        Save_params(params, "save_params", train_epoch)
+        Save_params(params, save_dir, train_epoch)
         if valid_loss > best_epoch_loss and ht < lr_halve_times:
             lr /= 2
             print "\t\tHalve learning rates to %.6f" % lr
@@ -213,22 +215,33 @@ def Load_pair(csv_dir, pair):
     return [sample_1, sample_2, is_pos]
 
 
-
 if __name__ == "__main__":
     pkl_name = r"D:\EclipseProjects\SequenceToSequence\\train_valid_list.pkl"
+    csv_dir = "D:\IEMOCAP_full_release\emobase"
+    save_dir = r"pool3_max"     # pool_len = 3, max_pooling
+
+    learn_rate = 0.5
+    epoches = 100
+    lr_ht = 7
+    batch_size = 100
+    process_num = 20
+
+    pool_len = 3
+    avg = False
+
     pkl = open(pkl_name, "rb")
     train_pairs = cPickle.load(pkl)
     valid_pairs = cPickle.load(pkl)
     # train_pairs = train_pairs[:17]
     # valid_pairs = valid_pairs[:8]
     pkl.close()
-    csv_dir = "D:\IEMOCAP_full_release\emobase"
     hidden_size_list = [50, 50, 50]
     in_dim = 30     # consistent with csv column
     params = EC.Construct_net(hidden_size_list, in_dim)
     # Train(params, train_pairs, valid_pairs, csv_dir, pool_len=3, average=False,
     #       epochs=30)
     print "Start Training"
-    Train_multiprocess(params, train_pairs, valid_pairs, csv_dir, pool_len=3,
-                       average=False, lr=0.1, epoches=100, lr_halve_times=8,
-                       mini_batch=100, process_num=20)
+    Train_multiprocess(params, train_pairs, valid_pairs, csv_dir, save_dir,
+                       pool_len=pool_len, average=avg,
+                       lr=learn_rate, epoches=epoches, lr_halve_times=lr_ht,
+                       mini_batch=batch_size, process_num=process_num, )
