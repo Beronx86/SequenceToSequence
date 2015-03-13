@@ -218,10 +218,12 @@ def Bi_LSTM_feed_backward(f_weights, b_weights, f_inter_vals, b_inter_vals,
     return f_Dg, b_Dg, lower_input_errs
 
 
-def Construct_net(hidden_size_list, in_size, init_range=0.1):
+def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1):
     rng = np.random.RandomState()
     params = dict()
     params["num_layers"] = len(hidden_size_list)
+    params["pool_len"] = pool_len
+    params["average"] = avg
     input_size = in_size
     for i, layer_size in enumerate(hidden_size_list):
         f_layer_name = "LSTM_layer_f" + str(i)
@@ -263,8 +265,7 @@ def Construct_net(hidden_size_list, in_size, init_range=0.1):
     return params
 
 
-def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3,
-                          avg=False, mode=0):
+def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
     """
     :type params: dict
     :type in_seq_1: list
@@ -295,7 +296,8 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, pool_len=3,
         lower_acts_1 = ret_1[0]
         lower_acts_2 = ret_2[0]
     loss, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
-                                                           is_pos, pool_len, avg)
+                                                           is_pos, params["pool_len"],
+                                                           params["average"])
     if mode == 1:
         return loss
     in_err_1 = Dl_out_s1
