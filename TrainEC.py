@@ -67,15 +67,18 @@ def Load_Feed(csv_dir, pair, params, mode=0):
         return loss
 
 
-def Train_multiprocess(params, train_list, valid_list, csv_dir,
+def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                        save_dir="save_params",
-                       epoches=8, lr=0.1, cl=5, lr_halve_times=5,
+                       epoches=8, lr=0.1, cl=0, lr_halve_times=5, mode="ada",
+                       momentum=0.95,
                        mini_batch=100, process_num=20):
     multiprocessing.freeze_support()
     train_epoch = 1
     pp_span = 2
     best_epoch_loss = 1e9
     ht = 0
+    if mode in ["ada", "adaautocoor"]:
+        lr_halve_times = 0
     while train_epoch <= epoches:
         print "Epoch %d, shuffling samples" % train_epoch
         shuffle(train_list)  # shuffle samples
@@ -104,7 +107,8 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir,
             for k in grads.keys():
                 for idx_g in range(len(grads[k])):
                     grads[k][idx_g] /= mini_batch
-            EC.All_params_SGD(params, grads, lr, cl)
+            EC.All_params_SGD(params, grads, lr, cl, mode=mode,
+                              grad_acc=grad_acc, momentum=momentum)
             if i % pp_span == 0 and i != 0:
                 t1 = time.time()
                 print "\tAverage loss: %.12f" % (pp_loss /
@@ -136,7 +140,8 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir,
             for k in grads.keys():
                 for idx_g in range(len(grads[k])):
                     grads[k][idx_g] /= rest_num
-            EC.All_params_SGD(params, grads, lr, cl)
+            EC.All_params_SGD(params, grads, lr, cl, mode=mode,
+                              grad_acc=grad_acc, momentum=momentum)
         valid_loss = Calculate_loss_multiprocess(params, valid_list, csv_dir,
                                                  mini_batch, process_num)
         print "Epoch %d \t Average valid loss: %.12f" % (train_epoch, valid_loss)
@@ -144,6 +149,7 @@ def Train_multiprocess(params, train_list, valid_list, csv_dir,
         if valid_loss > best_epoch_loss and ht < lr_halve_times:
             lr /= 2
             print "\t\tHalve learning rates to %.6f" % lr
+            ht += 1
         else:
             best_epoch_loss = valid_loss
         train_epoch += 1
@@ -219,9 +225,12 @@ if __name__ == "__main__":
     csv_dir = "D:\IEMOCAP_full_release\emobase"
     save_dir = r"pool3_max"     # pool_len = 3, max_pooling
 
+    mode = "ada"
     learn_rate = 0.5
+    cln = 0
+    momentum = 0.95
     epoches = 100
-    lr_ht = 7
+    lr_ht = 0
     batch_size = 100
     process_num = 20
 
@@ -236,9 +245,10 @@ if __name__ == "__main__":
     pkl.close()
     hidden_size_list = [50, 50, 50]
     in_dim = 30     # consistent with csv column
-    params = EC.Construct_net(hidden_size_list, in_dim, pool_len, avg)
+    params, grad_acc = EC.Construct_net(hidden_size_list, in_dim, pool_len, avg)
     # Train(params, train_pairs, valid_pairs, csv_dir, epochs=30)
     print "Start Training"
-    Train_multiprocess(params, train_pairs, valid_pairs, csv_dir, save_dir,
+    Train_multiprocess(params, grad_acc, train_pairs, valid_pairs, csv_dir, save_dir,
                        lr=learn_rate, epoches=epoches, lr_halve_times=lr_ht,
+                       cl=cln, mode=mode, momentum=momentum,
                        mini_batch=batch_size, process_num=process_num, )

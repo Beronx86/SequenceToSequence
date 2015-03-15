@@ -221,6 +221,7 @@ def Bi_LSTM_feed_backward(f_weights, b_weights, f_inter_vals, b_inter_vals,
 def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1):
     rng = np.random.RandomState()
     params = dict()
+    grad_acc = dict()
     params["num_layers"] = len(hidden_size_list)
     params["pool_len"] = pool_len
     params["average"] = avg
@@ -262,7 +263,13 @@ def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1):
                                          size=(layer_size, 1)), dtype=real)
         params[b_layer_name] = [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s]
         input_size = layer_size * 2
-    return params
+        grad_acc[f_layer_name] = []
+        for W in params[f_layer_name]:
+            grad_acc[f_layer_name].append(np.zeros(W.shape, dtype=real))
+        grad_acc[b_layer_name] = []
+        for W in params[b_layer_name]:
+            grad_acc[b_layer_name].append(np.zeros(W.shape, dtype=real))
+    return params, grad_acc
 
 
 def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
@@ -320,14 +327,67 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
     return grads, loss
 
 
-def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5):
+def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5, mode="ada",
+                   grad_acc=0, momentum=0.95):
+    if mode not in ["sgd", "momentum", "ada", "adaautocoor"]:
+        mode = "ada"
     for i in range(params["num_layers"]):
         f_layer_name = "LSTM_layer_f" + str(i)
         b_layer_name = "LSTM_layer_b" + str(i)
         for W, g in zip(params[f_layer_name], grads[f_layer_name]):
-            STS.Weight_SGD(W, g, learn_rate, clip_norm)
+            SGD(W, g, mode, learn_rate, momentum, grad_acc[f_layer_name],
+                clip_norm)
         for W, g in zip(params[b_layer_name], grads[b_layer_name]):
-            STS.Weight_SGD(W, g, learn_rate, clip_norm)
+            SGD(W, g, mode, learn_rate, momentum, grad_acc[f_layer_name],
+                clip_norm)
+
+
+def SGD(weight, gradient, mode, learn_rate=0.1, momentum=0.95, grad_acc=0,
+        clip_norm=5):
+    if mode == "sgd":
+        STS.Weight_SGD(weight, gradient, learn_rate, clip_norm)
+    elif mode == "momentum":
+        Weight_SGD_mnt(weight, gradient, grad_acc, learn_rate, momentum,
+                       clip_norm)
+    elif mode == "ada":
+        Weight_SGD_ada(weight, gradient, grad_acc, learn_rate, clip_norm)
+    else:
+        Weight_SGD_adaautocoor(weight, gradient, grad_acc, learn_rate, momentum,
+                               clip_norm)
+
+
+
+def Weight_SGD_mnt(weight, gradient, gradmnt, learn_rate=0.1, momentum=0.95,
+                   clip_norm=5):
+    if clip_norm > 0:
+        grads_norm = gradient * gradient
+        clip_idx = grads_norm > clip_norm * clip_norm
+        gradient[clip_idx] = clip_norm * gradient[clip_idx] / grads_norm[clip_idx]
+    gradmnt = momentum * gradmnt + (1 - momentum) * gradient
+    weight -= learn_rate * gradmnt
+
+
+def Weight_SGD_ada(weight, gradient, gradsq, learn_rate=0.1, clip_norm=5):
+    fudge_factor = 1e-6     # for numerical stability
+    if clip_norm > 0:
+        grads_norm = gradient * gradient
+        clip_idx = grads_norm > clip_norm * clip_norm
+        gradient[clip_idx] = clip_norm * gradient[clip_idx] / grads_norm[clip_idx]
+    gradsq += gradient * gradient
+    gradient /= (fudge_factor + np.sqrt(gradsq))
+    weight -= learn_rate * gradient
+
+
+def Weight_SGD_adaautocoor(weight, gradient, gradsq, learn_rate=0.1,
+                           autocorr=0.95, clip_norm=5):
+    fudge_factor = 1e-6     # for numerical stability
+    if clip_norm > 0:
+        grads_norm = gradient * gradient
+        clip_idx = grads_norm > clip_norm * clip_norm
+        gradient[clip_idx] = clip_norm * gradient[clip_idx] / grads_norm[clip_idx]
+    gradsq += autocorr * gradient + (1 - autocorr) * gradient * gradient
+    gradient /= (fudge_factor + np.sqrt(gradsq))
+    weight -= learn_rate * gradient
 
 
 def Gradient_check(params, seq_1, seq_2, mode):
