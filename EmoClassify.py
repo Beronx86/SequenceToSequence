@@ -395,7 +395,7 @@ def Weight_SGD_adaautocoor(weight, gradient, gradsq, learn_rate=0.1,
         grads_norm = gradient * gradient
         clip_idx = grads_norm > clip_norm * clip_norm
         gradient[clip_idx] = clip_norm * gradient[clip_idx] / grads_norm[clip_idx]
-    gradsq += autocorr * gradient + (1 - autocorr) * gradient * gradient
+    gradsq += autocorr * gradsq + (1 - autocorr) * gradient * gradient
     gradient /= (fudge_factor + np.sqrt(gradsq))
     weight -= learn_rate * gradient
 
