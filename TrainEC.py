@@ -225,7 +225,7 @@ if __name__ == "__main__":
     csv_dir = "D:\IEMOCAP_full_release\emobase"
     save_dir = r"pool3_max"     # pool_len = 3, max_pooling
 
-    mode = "ada"
+    mode = "momentum"
     learn_rate = 0.5
     cln = 0
     momentum = 0.95
@@ -245,7 +245,8 @@ if __name__ == "__main__":
     pkl.close()
     hidden_size_list = [50, 50, 50]
     in_dim = 30     # consistent with csv column
-    params, grad_acc = EC.Construct_net(hidden_size_list, in_dim, pool_len, avg)
+    params, grad_acc = EC.Construct_net(hidden_size_list, in_dim, pool_len, avg,
+                                        mode=mode)
     # Train(params, train_pairs, valid_pairs, csv_dir, epochs=30)
     print "Start Training"
     Train_multiprocess(params, grad_acc, train_pairs, valid_pairs, csv_dir, save_dir,

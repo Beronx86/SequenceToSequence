@@ -218,7 +218,8 @@ def Bi_LSTM_feed_backward(f_weights, b_weights, f_inter_vals, b_inter_vals,
     return f_Dg, b_Dg, lower_input_errs
 
 
-def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1):
+def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1,
+                  mode="ada"):
     rng = np.random.RandomState()
     params = dict()
     grad_acc = dict()
@@ -264,11 +265,17 @@ def Construct_net(hidden_size_list, in_size, pool_len, avg, init_range=0.1):
         params[b_layer_name] = [W_iota_y, W_iota_s, W_phi_y, W_phi_s, W, W_eta_y, W_eta_s]
         input_size = layer_size * 2
         grad_acc[f_layer_name] = []
-        for W in params[f_layer_name]:
-            grad_acc[f_layer_name].append(np.zeros(W.shape, dtype=real))
         grad_acc[b_layer_name] = []
-        for W in params[b_layer_name]:
-            grad_acc[b_layer_name].append(np.zeros(W.shape, dtype=real))
+        if mode.startswith("ada"):
+            for W in params[f_layer_name]:
+                grad_acc[f_layer_name].append(np.ones(W.shape, dtype=real))
+            for W in params[b_layer_name]:
+                grad_acc[b_layer_name].append(np.ones(W.shape, dtype=real))
+        else:
+            for W in params[f_layer_name]:
+                grad_acc[f_layer_name].append(np.zeros(W.shape, dtype=real))
+            for W in params[b_layer_name]:
+                grad_acc[b_layer_name].append(np.zeros(W.shape, dtype=real))
     return params, grad_acc
 
 
@@ -334,12 +341,12 @@ def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5, mode="ada",
     for i in range(params["num_layers"]):
         f_layer_name = "LSTM_layer_f" + str(i)
         b_layer_name = "LSTM_layer_b" + str(i)
-        for W, g in zip(params[f_layer_name], grads[f_layer_name]):
-            SGD(W, g, mode, learn_rate, momentum, grad_acc[f_layer_name],
-                clip_norm)
-        for W, g in zip(params[b_layer_name], grads[b_layer_name]):
-            SGD(W, g, mode, learn_rate, momentum, grad_acc[f_layer_name],
-                clip_norm)
+        for W, g, g_a in zip(params[f_layer_name], grads[f_layer_name],
+                             grad_acc[f_layer_name]):
+            SGD(W, g, mode, learn_rate, momentum, g_a, clip_norm)
+        for W, g, g_a in zip(params[b_layer_name], grads[b_layer_name],
+                             grad_acc[f_layer_name]):
+            SGD(W, g, mode, learn_rate, momentum, g_a, clip_norm)
 
 
 def SGD(weight, gradient, mode, learn_rate=0.1, momentum=0.95, grad_acc=0,
@@ -363,7 +370,10 @@ def Weight_SGD_mnt(weight, gradient, gradmnt, learn_rate=0.1, momentum=0.95,
         grads_norm = gradient * gradient
         clip_idx = grads_norm > clip_norm * clip_norm
         gradient[clip_idx] = clip_norm * gradient[clip_idx] / grads_norm[clip_idx]
-    gradmnt = momentum * gradmnt + (1 - momentum) * gradient
+    if np.sum(gradmnt == 0) == gradient.size:
+        gradmnt = gradient
+    else:
+        gradmnt = momentum * gradmnt + (1 - momentum) * gradient
     weight -= learn_rate * gradmnt
 
 
