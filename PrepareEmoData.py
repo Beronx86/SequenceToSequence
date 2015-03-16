@@ -59,7 +59,7 @@ def generate_pair(emolist_1, emolist_2=0):
 
 for emo in use_emo:
     shuffle(emo_dic[emo])
-    test_dic[emo] = emo_dic[emo][-100:-1]
+    test_dic[emo] = emo_dic[emo][-100:]
     valid_dic[emo] = emo_dic[emo][-150:-100]
     emo_dic[emo] = emo_dic[emo][:-150]
 
@@ -81,7 +81,9 @@ tv_f = open("train_valid_list.pkl", "wb")
 cPickle.dump(train_pair, tv_f)
 cPickle.dump(valid_pair, tv_f)
 tv_f.close()
-t_f = open("test_dic.pkl", "wb")
+t_f = open("dic.pkl", "wb")
+cPickle.dump(emo_dic, t_f)
+cPickle.dump(valid_dic, t_f)
 cPickle.dump(test_dic, t_f)
 t_f.close()
 
