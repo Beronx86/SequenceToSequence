@@ -226,9 +226,9 @@ if __name__ == "__main__":
     save_dir = r"pool3_max"     # pool_len = 3, max_pooling
 
     mode = "momentum"
-    learn_rate = 0.5
+    learn_rate = 0.1
     cln = 0
-    momentum = 0.95
+    momentum = 0.90
     epoches = 100
     lr_ht = 0
     batch_size = 100
