@@ -538,10 +538,10 @@ def Pool_feed_forward_single(in_seq_1, pool_len, average):
                 # max units.
                 max_idx_1.append(np.argmax(feature_mtx_1[frame_idx_1[i]: frame_idx_1[i + 1]],
                                            axis=0) + frame_idx_1[i])
-    return feature_vec_1, max_idx_1
+    return feature_vec_1
 
 
-def Extract_feature(params, in_seq, pool_len, avg=False):
+def Extract_feature(params, in_seq):
     lower_acts = in_seq
     for i in range(params["num_layers"]):
         f_layer_name = "LSTM_layer_f" + str(i)
@@ -549,5 +549,6 @@ def Extract_feature(params, in_seq, pool_len, avg=False):
         ret = Bi_LSTM_feed_forward(params[f_layer_name], params[b_layer_name],
                                    lower_acts)
         lower_acts = ret[0]
-    feature_vec = Pool_feed_forward_single(lower_acts, pool_len, avg)
+    feature_vec = Pool_feed_forward_single(lower_acts, params["pool_len"],
+                                           params["average"])
     return feature_vec
