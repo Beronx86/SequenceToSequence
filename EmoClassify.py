@@ -84,6 +84,9 @@ def Pool_feed_forward(in_seq_1, in_seq_2, pool_len=0, average=True):
     return feature_vec_1, feature_vec_2, max_idx_1, max_idx_2
 
 
+
+
+
 def Pool_feed_backward(input_errs_1, input_errs_2, time_steps_1, time_steps_2,
                        max_idx_1=0, max_idx_2=0, pool_len=0, average=False):
     Dl_pool_1 = range(time_steps_1)
@@ -129,6 +132,53 @@ def Pool_feed_backward(input_errs_1, input_errs_2, time_steps_1, time_steps_2,
                 Dl_pool_1[i] = Dl_mtx_1[i].reshape(feature_dim, 1)
             for i in range(time_steps_2):
                 Dl_pool_2[i] = Dl_mtx_2[i].reshape(feature_dim, 1)
+    return Dl_pool_1, Dl_pool_2
+
+
+def KMax_pool_feed_forward_single(input_seq, k):
+    feature_dim = input_seq[0].shape[0]
+    feature_mtx = np.zeros((len(input_seq), feature_dim), dtype=real)
+    feature_vec = np.zeros((feature_dim * k), dtype=real)
+    max_idx = []
+    for i, v in enumerate(input_seq):
+        feature_mtx[i] = input_seq[i][:, 0]
+    order_mtx = np.argsort(feature_mtx, axis=0)
+    for i in range(feature_dim):
+        s = i * k
+        e = s + k
+        order = order_mtx[:, i]
+        feat = feature_mtx[:, i]
+        max_k_idx = order[-k:]
+        dec_max_k_idx = np.sort(max_k_idx)
+        feature_vec[s:e] = feat[dec_max_k_idx]
+        max_idx.append(dec_max_k_idx)
+    return feature_vec, max_idx
+
+
+def KMax_pool_feed_backward_single(input_errs, time_steps, max_idx, k):
+    feature_dim = input_errs.shape[0] / k
+    Dl_mtx = np.zeros((time_steps, feature_dim), dtype=real)
+    for i in range(feature_dim):
+        s = k * i
+        e = s + k
+        r_idx = max_idx[i]
+        Dl_mtx[r_idx, i] = input_errs[s:e]
+    Dl_pool = [Dl_mtx[i].reshape(feature_dim, 1) for i in range(time_steps)]
+    return Dl_pool
+
+
+def KMax_pool_feed_forward(in_seq_1, in_seq_2, k):
+    vec_1, max_idx_1 = KMax_pool_feed_forward_single(in_seq_1, k)
+    vec_2, max_idx_2 = KMax_pool_feed_forward_single(in_seq_2, k)
+    return vec_1, vec_2, max_idx_1, max_idx_2
+
+
+def KMax_pool_feed_backward(in_err_1, in_err_2, time_steps_1, time_steps_2,
+                            max_idx_1, max_idx_2, k):
+    Dl_pool_1 = KMax_pool_feed_backward_single(in_err_1, time_steps_1,
+                                               max_idx_1, k)
+    Dl_pool_2 = KMax_pool_feed_backward_single(in_err_2, time_steps_2,
+                                               max_idx_2, k)
     return Dl_pool_1, Dl_pool_2
 
 

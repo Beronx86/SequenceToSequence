@@ -16,7 +16,8 @@ check_Generage = 0
 check_Beamsearch = 0
 check_Cos = 0
 check_Pool = 0
-check_BLSTM_Cos = 1
+check_BLSTM_Cos = 0
+check_KMax_pool = 1
 rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
@@ -295,3 +296,100 @@ if check_BLSTM_Cos:
     mode = [True, 3, False]
     params = EC.Construct_net(hidden_size_list, dim)
     EC.Gradient_check(params, seq_1, seq_2, mode)
+
+
+def KMax_pool_feed_forward_backward(in_seq_1, in_seq_2, k, weights_1, weights_2,
+                                    is_pos):
+    ts_1 = len(in_seq_1)
+    ts_2 = len(in_seq_2)
+    in_1 = []
+    in_2 = []
+    for i in range(ts_1):
+        in_1.append(weights_1 * in_seq_1[i])
+    for i in range(ts_2):
+        in_2.append(weights_2 * in_seq_2[i])
+    v_1, v_2, max_idx_1, max_idx_2 = EC.KMax_pool_feed_forward(in_1, in_2, k)
+    loss, Dl_1, Dl_2 = EC.Cos_feed_forward_backward(v_1, v_2, is_pos)
+    Dl_pool_1, Dl_pool_2 = EC.KMax_pool_feed_backward(Dl_1, Dl_2, ts_1, ts_2,
+                                                      max_idx_1, max_idx_2, k)
+    Dw_1 = np.zeros(weights_1.shape, dtype=real)
+    Dw_2 = np.zeros(weights_2.shape, dtype=real)
+    for i in range(ts_1):
+        Dw_1 += Dl_pool_1[i] * in_seq_1[i]
+    for i in range(ts_2):
+        Dw_2 += Dl_pool_2[i] * in_seq_2[i]
+    return loss, Dw_1, Dw_2
+
+if check_KMax_pool:
+    out_dir = "debug"
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+    else:
+        files = os.listdir(out_dir)
+        for f in files:
+            os.remove(os.path.join(out_dir, f))
+    dim = 5
+    len_1 = 17
+    len_2 = 12
+    seq_1 = []
+    seq_2 = []
+    is_pos = True
+    k = 3
+    average = False
+    for i in range(len_1):
+        seq_1.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    for i in range(len_2):
+        seq_2.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    weights_1 = rng.uniform(low=-0.1, high=0.1, size=(dim, 1))
+    weights_2 = rng.uniform(low=-0.1, high=0.1, size=(dim, 1))
+    loss, Dw_1, Dw_2 = KMax_pool_feed_forward_backward(seq_1, seq_2, k, weights_1,
+                                                       weights_2, is_pos)
+    pertub = 1e-6
+    thres = 1e-5
+    w_1_diff_m = np.zeros(weights_1.shape, dtype=real)
+    w_1_diff_a = np.zeros(weights_1.shape, dtype=real)
+    for i in range(weights_1.shape[0]):
+        weights_1[i] += pertub
+        w_1_diff_a[i], _, _ = KMax_pool_feed_forward_backward(seq_1, seq_2, k,
+                                                              weights_1, weights_2, is_pos)
+        weights_1[i] -= 2 * pertub
+        w_1_diff_m[i], _, _ = KMax_pool_feed_forward_backward(seq_1, seq_2, k,
+                                                              weights_1, weights_2, is_pos)
+        weights_1[i] += pertub
+    numDw_1 = (w_1_diff_a - w_1_diff_m) / (2 * pertub)
+    w_2_diff_m = np.zeros(weights_2.shape, dtype=real)
+    w_2_diff_a = np.zeros(weights_2.shape, dtype=real)
+    for i in range(weights_2.shape[0]):
+        weights_2[i] += pertub
+        w_2_diff_a[i], _, _ = KMax_pool_feed_forward_backward(seq_1, seq_2, k,
+                                                              weights_1, weights_2, is_pos)
+        weights_2[i] -= 2 * pertub
+        w_2_diff_m[i], _, _ = KMax_pool_feed_forward_backward(seq_1, seq_2, k,
+                                                              weights_1, weights_2, is_pos)
+        weights_2[i] += pertub
+    numDw_2 = (w_2_diff_a - w_2_diff_m) / (2 * pertub)
+    diff_1 = Dw_1 - numDw_1
+    diff_2 = Dw_2 - numDw_2
+    diff = [diff_1, diff_2]
+    name = ["weights_1", "weights_2"]
+    algDg = [Dw_1, Dw_2]
+    numDg = [numDw_1, numDw_2]
+    for i in range(2):
+        if np.sum(np.abs(diff[i]) > thres) > 0:
+            formatted_name = " " * (24 - len(name[i])) + name[i]
+            print "%s\tgradient check failed" % formatted_name
+            save_diff_name = "%s.failed.diff.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_diff_name), diff[i], "%+.6e")
+            save_algDg_name = "%s.failed.algDg.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_algDg_name), algDg[i], "%+.6e")
+            save_numDg_name = "%s.failed.numDg.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_numDg_name), numDg[i], "%+.6e")
+        else:
+            formatted_name = " " * (24 - len(name[i])) + name[i]
+            print "%s\tgradient check succeeded" % formatted_name
+            save_diff_name = "%s.succeeded.diff.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_diff_name), diff[i], "%+.6e")
+            save_algDg_name = "%s.succeeded.algDg.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_algDg_name), algDg[i], "%+.6e")
+            save_numDg_name = "%s.succeeded.numDg.txt" % name[i]
+            np.savetxt(os.path.join("debug", save_numDg_name), numDg[i], "%+.6e")
