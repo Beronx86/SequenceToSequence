@@ -1,5 +1,6 @@
 __author__ = 'v-penlu'
 import numpy as np
+import EmoClassify_kmax as ECK
 import EmoClassify as EC
 import math
 from numpy.linalg import norm
@@ -17,7 +18,8 @@ check_Beamsearch = 0
 check_Cos = 0
 check_Pool = 0
 check_BLSTM_Cos = 0
-check_KMax_pool = 1
+check_KMax_pool = 0
+check_KMax_BLSTM_Cos = 1
 rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
@@ -393,3 +395,21 @@ if check_KMax_pool:
             np.savetxt(os.path.join("debug", save_algDg_name), algDg[i], "%+.6e")
             save_numDg_name = "%s.succeeded.numDg.txt" % name[i]
             np.savetxt(os.path.join("debug", save_numDg_name), numDg[i], "%+.6e")
+
+
+if check_KMax_BLSTM_Cos:
+    dim = 5
+    len_1 = 17
+    len_2 = 12
+    seq_1 = []
+    seq_2 = []
+    is_pos = True
+    k = 3
+    average = False
+    for i in range(len_1):
+        seq_1.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    for i in range(len_2):
+        seq_2.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    hidden_size_list = [8, 9]
+    params, _ = ECK.Construct_net(hidden_size_list, dim, k)
+    ECK.Gradient_check(params, seq_1, seq_2, is_pos)

@@ -221,8 +221,8 @@ def Load_pair(csv_dir, pair):
 
 
 if __name__ == "__main__":
-    pkl_name = r"D:\EclipseProjects\SequenceToSequence\\train_valid_list.pkl"
-    csv_dir = "D:\IEMOCAP_full_release\emobase"
+    pkl_name = r"train_valid_list.pkl"
+    csv_dir = r"D:\IEMOCAP_full_release\emobase"
     save_dir = r"pool3_max"     # pool_len = 3, max_pooling
 
     mode = "momentum"
