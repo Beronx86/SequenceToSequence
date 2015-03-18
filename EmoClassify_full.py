@@ -197,7 +197,7 @@ def Construct_net(hidden_size_list, in_size, out_dim, pool_mode, act,
                                            size=(out_dim, 2 * pool_mode[0] * hidden_size_list[-1])), dtype=real)
     if sgd_mode.startswith("ada"):
         grad_acc["out"] = np.ones(params["out"].shape, dtype=real)
-    elif sgd_mode == "momentum":
+    else:
         grad_acc["out"] = np.zeros(params["out"].shape, dtype=real)
     for i, layer_size in enumerate(hidden_size_list):
         f_layer_name = "LSTM_layer_f" + str(i)
@@ -243,13 +243,11 @@ def Construct_net(hidden_size_list, in_size, out_dim, pool_mode, act,
                 grad_acc[f_layer_name].append(np.ones(W.shape, dtype=real))
             for W in params[b_layer_name]:
                 grad_acc[b_layer_name].append(np.ones(W.shape, dtype=real))
-        elif sgd_mode == "momentum":
+        else:
             for W in params[f_layer_name]:
                 grad_acc[f_layer_name].append(np.zeros(W.shape, dtype=real))
             for W in params[b_layer_name]:
                 grad_acc[b_layer_name].append(np.zeros(W.shape, dtype=real))
-    if sgd_mode == "sgd":
-        grad_acc = 0
     return params, grad_acc
 
 
@@ -368,3 +366,20 @@ def Check_diff(params, grads, name, seq_1, seq_2, is_pos):
             np.savetxt(os.path.join("debug", save_algDg_name), algDg, "%+.6e")
             save_numDg_name = "%s.succeeded.numDg.txt" % name
             np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+
+
+def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5, mode="ada",
+                   grad_acc=0, momentum=0.95):
+    if mode not in ["sgd", "momentum", "ada", "adaautocoor"]:
+        mode = "ada"
+    EC.SGD(params["out"], grads["out"], mode, learn_rate, momentum,
+           grad_acc["out"], clip_norm)
+    for i in range(params["num_layers"]):
+        f_layer_name = "LSTM_layer_f" + str(i)
+        b_layer_name = "LSTM_layer_b" + str(i)
+        for W, g, g_a in zip(params[f_layer_name], grads[f_layer_name],
+                             grad_acc[f_layer_name]):
+            EC.SGD(W, g, mode, learn_rate, momentum, g_a, clip_norm)
+        for W, g, g_a in zip(params[b_layer_name], grads[b_layer_name],
+                             grad_acc[f_layer_name]):
+            EC.SGD(W, g, mode, learn_rate, momentum, g_a, clip_norm)

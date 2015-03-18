@@ -117,13 +117,11 @@ def Construct_net(hidden_size_list, in_size, k, init_range=0.1,
                 grad_acc[f_layer_name].append(np.ones(W.shape, dtype=real))
             for W in params[b_layer_name]:
                 grad_acc[b_layer_name].append(np.ones(W.shape, dtype=real))
-        elif mode == "momentum":
+        else:
             for W in params[f_layer_name]:
                 grad_acc[f_layer_name].append(np.zeros(W.shape, dtype=real))
             for W in params[b_layer_name]:
                 grad_acc[b_layer_name].append(np.zeros(W.shape, dtype=real))
-    if mode == "sgd":
-        grad_acc = 0
     return params, grad_acc
 
 
