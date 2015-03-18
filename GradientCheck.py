@@ -2,6 +2,7 @@ __author__ = 'v-penlu'
 import numpy as np
 import EmoClassify_kmax as ECK
 import EmoClassify as EC
+import EmoClassify_full as ECF
 import math
 from numpy.linalg import norm
 import SequenceToSequence as STS
@@ -19,7 +20,6 @@ check_Cos = 0
 check_Pool = 0
 check_BLSTM_Cos = 0
 check_KMax_pool = 0
-check_KMax_BLSTM_Cos = 1
 rng = np.random.RandomState()
 if check_STS_2vocab:
     em_time_steps = 11
@@ -397,6 +397,7 @@ if check_KMax_pool:
             np.savetxt(os.path.join("debug", save_numDg_name), numDg[i], "%+.6e")
 
 
+check_KMax_BLSTM_Cos = 0
 if check_KMax_BLSTM_Cos:
     dim = 5
     len_1 = 17
@@ -413,3 +414,184 @@ if check_KMax_BLSTM_Cos:
     hidden_size_list = [8, 9]
     params, _ = ECK.Construct_net(hidden_size_list, dim, k)
     ECK.Gradient_check(params, seq_1, seq_2, is_pos)
+
+check_KMax_BLSTM_Cos_full = 0
+if check_KMax_BLSTM_Cos_full:
+    out_dir = "debug"
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+    else:
+        files = os.listdir(out_dir)
+        for f in files:
+            os.remove(os.path.join(out_dir, f))
+    dim = 5
+    full_size = 10
+    len_1 = 13
+    len_2 = 17
+    seq_1 = []
+    seq_2 = []
+    is_pos = True
+    act = "relu"
+    k = 3
+    for i in range(len_1):
+        seq_1.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    for i in range(len_2):
+        seq_2.append(rng.uniform(low=0, high=1, size=(dim, 1)))
+    weights_full = rng.uniform(low=-0.1, high=0.1, size=(full_size, k * dim))
+    _, Dg, _, _ = ECF.Out_feed_forward_backward_kmax(weights_full, seq_1, seq_2,
+                                                     is_pos, k, act)
+
+    pertub = 1e-6
+    thres = 1e-5
+    w_diff_m = np.zeros(weights_full.shape, dtype=real)
+    w_diff_a = np.zeros(weights_full.shape, dtype=real)
+    for i in range(weights_full.shape[0]):
+        for j in range(weights_full.shape[1]):
+            weights_full[i, j] += pertub
+            w_diff_a[i, j], _, _, _ = ECF.Out_feed_forward_backward_kmax(weights_full, seq_1, seq_2, is_pos, k, act)
+            weights_full[i, j] -= 2 * pertub
+            w_diff_m[i, j], _, _, _ = ECF.Out_feed_forward_backward_kmax(weights_full, seq_1, seq_2, is_pos, k, act)
+            weights_full[i, j] += pertub
+    numDg = (w_diff_a - w_diff_m) / (2 * pertub)
+    diff = Dg - numDg
+    name = "weights_full"
+    if np.sum(np.abs(diff) > thres) > 0:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check failed" % formatted_name
+        save_diff_name = "%s.failed.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.failed.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.failed.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+    else:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check succeeded" % formatted_name
+        save_diff_name = "%s.succeeded.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.succeeded.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.succeeded.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+
+
+def Check_full_feed_forward_backward_single(weights, vec, act='logistic'):
+    y, inter = ECF.Full_feed_forward_single(weights, vec, act)
+    loss = np.sum(y)
+    Dl = np.ones(y.shape)
+    Dg, lower_in_errs = ECF.Full_feed_backward_single(weights, Dl, inter)
+    return loss, Dg, lower_in_errs
+
+
+check_Full_single = 0
+if check_Full_single:
+    in_dim = 10
+    out_dim = 9
+    act = "logistic"
+    pert = 1e-6
+    thres = 1e-5
+    weights = rng.uniform(low=-0.1, high=0.1, size=(out_dim, in_dim))
+    vec = rng.uniform(low=-0.1, high=0.1, size=(in_dim,))
+    _, Dg, _ = Check_full_feed_forward_backward_single(weights, vec, act)
+    w_diff_m = np.zeros(weights.shape)
+    w_diff_a = np.zeros(weights.shape)
+    for i in range(weights.shape[0]):
+        for j in range(weights.shape[1]):
+            weights[i, j] += pert
+            w_diff_a[i, j], _, _ = Check_full_feed_forward_backward_single(weights, vec, act)
+            weights[i, j] -= 2 * pert
+            w_diff_m[i, j], _, _ = Check_full_feed_forward_backward_single(weights, vec, act)
+    numDg = (w_diff_a - w_diff_m) / (2 * pert)
+    diff = Dg - numDg
+    name = "weights_full"
+    if np.sum(np.abs(diff) > thres) > 0:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check failed" % formatted_name
+        save_diff_name = "%s.failed.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.failed.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.failed.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+    else:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check succeeded" % formatted_name
+        save_diff_name = "%s.succeeded.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.succeeded.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.succeeded.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+
+
+def Check_full_feed_forward_backward(weights, vec_1, vec_2, act="logistic"):
+    y_1, y_2, inter_1, inter_2 = ECF.Full_feed_forward(weights, vec_1, vec_2, act)
+    loss = np.sum(y_1 - y_2)
+    Dl_1 = np.ones(y_1.shape)
+    Dl_2 = -1 * np.ones(y_2.shape)
+    Dg, lower_in_err_1, lower_in_err_2 = ECF.Full_feed_backward(weights, Dl_1, Dl_2,
+                                                                inter_1, inter_2)
+    return loss, Dg, lower_in_err_1, lower_in_err_2
+
+check_Full = 0
+if check_Full:
+    in_dim = 10
+    out_dim = 9
+    act = "logistic"
+    pert = 1e-6
+    thres = 1e-5
+    weights = rng.uniform(low=-0.1, high=0.1, size=(out_dim, in_dim))
+    vec_1 = rng.uniform(low=-0.1, high=0.1, size=(in_dim,))
+    vec_2 = rng.uniform(low=-0.1, high=0.1, size=(in_dim,))
+    _, Dg, _, _ = Check_full_feed_forward_backward(weights, vec_1, vec_2, act)
+    w_diff_m = np.zeros(weights.shape)
+    w_diff_a = np.zeros(weights.shape)
+    for i in range(weights.shape[0]):
+        for j in range(weights.shape[1]):
+            weights[i, j] += pert
+            w_diff_a[i, j], _, _, _ = Check_full_feed_forward_backward(weights, vec_1, vec_2, act)
+            weights[i, j] -= 2 * pert
+            w_diff_m[i, j], _, _, _ = Check_full_feed_forward_backward(weights, vec_1, vec_2, act)
+    numDg = (w_diff_a - w_diff_m) / (2 * pert)
+    diff = Dg - numDg
+    name = "weights_full"
+    if np.sum(np.abs(diff) > thres) > 0:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check failed" % formatted_name
+        save_diff_name = "%s.failed.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.failed.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.failed.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+    else:
+        formatted_name = " " * (24 - len(name)) + name
+        print "%s\tgradient check succeeded" % formatted_name
+        save_diff_name = "%s.succeeded.diff.txt" % name
+        np.savetxt(os.path.join("debug", save_diff_name), diff, "%+.6e")
+        save_algDg_name = "%s.succeeded.algDg.txt" % name
+        np.savetxt(os.path.join("debug", save_algDg_name), Dg, "%+.6e")
+        save_numDg_name = "%s.succeeded.numDg.txt" % name
+        np.savetxt(os.path.join("debug", save_numDg_name), numDg, "%+.6e")
+
+
+check_BLSTM_full = 1
+if check_BLSTM_full:
+    in_size = 5
+    out_dim = 100
+    len_1 = 17
+    len_2 = 12
+    seq_1 = []
+    seq_2 = []
+    is_pos = True
+    pool_mode_1 = [3, False]
+    pool_mode_2 = [3]
+    act = "logistic"
+    for i in range(len_1):
+        seq_1.append(rng.uniform(low=0, high=1, size=(in_size, 1)))
+    for i in range(len_2):
+        seq_2.append(rng.uniform(low=0, high=1, size=(in_size, 1)))
+    hidden_size_list = [8, 9]
+    params, _ = ECF.Construct_net(hidden_size_list, in_size, out_dim,
+                                  pool_mode_2, act)
+    ECF.Gradient_check(params, seq_1, seq_2, is_pos)
