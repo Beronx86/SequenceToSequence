@@ -24,8 +24,9 @@ for i in range(1, 1 + session_cnt):
                         sen_name = s[1]
                         emo_dic[emo].append([i, wav_name, sen_name])
 
-use_emo = ["neu", "sad", "fru", "exc", "ang"]
+# use_emo = ["neu", "sad", "fru", "exc", "ang"]
 # use_emo = ["neu", "sad", "fru", "exc", "hap"]
+use_emo = ["neu", "sad", "fru", "exc", "hap", "ang"]
 # Pair Scheme
 # Pos 5 class, Neg 10 class, each class random choose 1000 samples.
 # Choose 50 from each emo class as valid set,
@@ -77,7 +78,7 @@ for i in range(len(use_emo)):
             valid_pair.append(generate_pair(emo_dic[use_emo[i]],
                                             emo_dic[use_emo[j]]))
 
-tv_f = open("train_valid_list.pkl", "wb")
+tv_f = open("train_valid_list_3.pkl", "wb")
 cPickle.dump(train_pair, tv_f)
 cPickle.dump(valid_pair, tv_f)
 tv_f.close()
@@ -87,7 +88,7 @@ cPickle.dump(valid_dic, t_f)
 cPickle.dump(test_dic, t_f)
 t_f.close()
 
-f = open("train_valid_list.txt", "w")
+f = open("train_valid_list_3.txt", "w")
 print >> f, "train_list", len(train_pair)
 for p in train_pair:
     print >> f, p

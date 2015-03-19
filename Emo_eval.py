@@ -98,20 +98,13 @@ def calculate_error(emo_vec, avg_vec):
 
 if __name__ == "__main__":
     test_dic_n = "dic.pkl"
-    params_n = 'params_epoch3.pkl'
-    train_arff_n = "train_emo_feature.arff"
-    test_arff_n = "test_emo_feature.arff"
+    name = "hidden100-100-100_lmax3_params_epoch9"
+    params_n = os.path.join("save_params", name + ".pkl")
+    train_arff_n = name + "_train_emo_feature.arff"
+    test_arff_n = name + "_test_emo_feature.arff"
     csv_dir = "D:\IEMOCAP_full_release\emobase"
     train_dic, valid_dic, test_dic = load_pkl(test_dic_n, 3)
     params = load_pkl(params_n)
     _, avg_vec = output_arff(train_dic, csv_dir, train_arff_n, test_dic.keys())
-    emo_vec, _ = output_arff(test_dic, csv_dir, test_arff_n)
-    pkl_n = "test_emo_feature.arff.pkl"
-    pkl = open(pkl_n, "rb")
-    d = cPickle.load(pkl)
-    # for i in range(len(d.keys())):
-    #     for j in range(i, len(d.keys())):
-    #         emo_1 = d.keys()[i]
-    #         emo_2 = d.keys()[j]
-    #         print emo_1, emo_2, cosine(d[emo_1], d[emo_2])
+    emo_vec, _ = output_arff(test_dic, csv_dir, test_arff_n, test_dic.keys())
     calculate_error(emo_vec, avg_vec)
