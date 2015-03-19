@@ -142,7 +142,7 @@ def Cos_feed_forward_backward(vec_1, vec_2, is_posative):
     vec_2_norm = math.sqrt(vec_2_pow)
     vec_1_2_p = vec_1.dot(vec_2)
     cos = vec_1_2_p / (vec_1_norm * vec_2_norm)
-    # cos = 1 - cosine(vec_1, vec_2)
+    # cos2 = 1 - cosine(vec_1, vec_2)
     DCos_1 = vec_2 / (vec_1_norm * vec_2_norm) - vec_1 * cos / vec_1_pow
     DCos_2 = vec_1 / (vec_1_norm * vec_2_norm) - vec_2 * cos / vec_2_pow
     if is_posative:
