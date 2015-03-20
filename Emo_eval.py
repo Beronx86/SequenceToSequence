@@ -1,10 +1,23 @@
 __author__ = 'v-penlu'
 import EmoClassify as EC
+import EmoClassify_kmax as ECK
+import EmoClassify_full as ECF
 from scipy.spatial.distance import cosine
 import cPickle
 import os
 import numpy as np
 import re
+
+
+def Extract_feature(params, sample):
+    if "out" in params:
+        vec = ECF.Extract_feature(params, sample)
+    else:
+        if "average" in params:
+            vec = EC.Extract_feature(params, sample)
+        else:
+            vec = ECK.Extract_feature(params, sample)
+    return vec
 
 
 def load_pkl(f_name, num=1):
@@ -97,8 +110,8 @@ def calculate_error(emo_vec, avg_vec):
 
 
 if __name__ == "__main__":
-    test_dic_n = "dic.pkl"
-    name = "hidden100-100-100_lmax3_params_epoch9"
+    test_dic_n = "dic_5emo1.pkl"
+    name = "hidden-100-100-100_lmax-3_epoch-6"
     params_n = os.path.join("save_params", name + ".pkl")
     train_arff_n = name + "_train_emo_feature.arff"
     test_arff_n = name + "_test_emo_feature.arff"

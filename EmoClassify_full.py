@@ -258,6 +258,28 @@ def Feed_forward_backward(params, seq_1, seq_2, is_pos, mode=0):
         return Feed_forward_backward_lmax(params, seq_1, seq_2, is_pos, mode)
 
 
+def Pool_feed_forward_single(params, in_seq):
+    if params["pool_mode"] == "lmax":
+        vec = EC.Pool_feed_forward_single(in_seq, params["pool_len"],
+                                          params["average"])
+    else:
+        vec, _ = ECK.KMax_pool_feed_forward_single(in_seq, params["k"])
+    return vec
+
+
+def Extract_feature(params, in_seq):
+    lower_acts = in_seq
+    for i in range(params["num_layers"]):
+        f_layer_name = "LSTM_layer_f" + str(i)
+        b_layer_name = "LSTM_layer_b" + str(i)
+        ret = EC.Bi_LSTM_feed_forward(params[f_layer_name], params[b_layer_name],
+                                      lower_acts)
+        lower_acts = ret[0]
+    pooled_vec = Pool_feed_forward_single(params, in_seq)
+    ret_vec = Full_feed_forward_single(params["out"], pooled_vec, params["act"])
+    return ret_vec
+
+
 def Gradient_check(params, seq_1, seq_2, is_pos):
     if not os.path.exists("debug"):
         os.mkdir("debug")
