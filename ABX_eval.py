@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial.distance import cosine
 import math
 import os
+import Emo_eval as EE
 
 
 def Generate_ABXlist(test_emo, train_emo, emo_dic, num):
@@ -31,18 +32,6 @@ def Load_csv(csv_dir, name_tuple):
     return sample
 
 
-def Extract_feature(params, in_seq, ext_mode):
-    if ext_mode == "lmax":
-        vec = EC.Extract_feature(params, in_seq)
-    # elif ext_mode == "kmax":
-    # elif ext_mode == "lmax_full":
-    # elif ext_mode == "kmax_full":
-    else:
-        print "extraction mode error"
-        exit(1)
-    return vec
-
-
 def Eval_list(ABX_list, csv_dir, params, ext_mode):
     total_cnt = len(ABX_list[0])
     right_cnt = 0
@@ -50,9 +39,9 @@ def Eval_list(ABX_list, csv_dir, params, ext_mode):
         seq_A = Load_csv(csv_dir, A)
         seq_B = Load_csv(csv_dir, B)
         seq_X = Load_csv(csv_dir, X)
-        vec_A = Extract_feature(params, seq_A, ext_mode)
-        vec_B = Extract_feature(params, seq_B, ext_mode)
-        vec_X = Extract_feature(params, seq_X, ext_mode)
+        vec_A = EE.Extract_feature(params, seq_A)
+        vec_B = EE.Extract_feature(params, seq_B)
+        vec_X = EE.Extract_feature(params, seq_X)
         cos_AX = 1 - cosine(vec_A, vec_X)
         cos_BX = 1 - cosine(vec_B, vec_X)
         if cos_BX > cos_AX:

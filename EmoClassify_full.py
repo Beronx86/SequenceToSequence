@@ -275,7 +275,7 @@ def Extract_feature(params, in_seq):
         ret = EC.Bi_LSTM_feed_forward(params[f_layer_name], params[b_layer_name],
                                       lower_acts)
         lower_acts = ret[0]
-    pooled_vec = Pool_feed_forward_single(params, in_seq)
+    pooled_vec = Pool_feed_forward_single(params, lower_acts)
     ret_vec = Full_feed_forward_single(params["out"], pooled_vec, params["act"])
     return ret_vec
 
