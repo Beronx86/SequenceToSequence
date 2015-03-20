@@ -55,16 +55,22 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                 pp_loss += loss
                 for k in p_grads.keys():
                     if k in grads:
-                        for idx_g in range(len(grads[k])):
-                            grads[k][idx_g] += p_grads[k][idx_g]
+                        if isinstance(grads[k], list):
+                            for idx_g in range(len(grads[k])):
+                                grads[k][idx_g] += p_grads[k][idx_g]
+                        else:
+                            grads[k] += p_grads[k]
                     else:
                         grads[k] = p_grads[k]
             for k in grads.keys():
-                for idx_g in range(len(grads[k])):
-                    grads[k][idx_g] /= mini_batch
+                if isinstance(grads[k], list):
+                    for idx_g in range(len(grads[k])):
+                        grads[k][idx_g] /= mini_batch
+                else:
+                    grads[k] /= mini_batch
             ECF.All_params_SGD(params, grads, lr, cl, mode=mode,
                                grad_acc=grad_acc, momentum=momentum)
-            if i % pp_span == 0 and i != 0:
+            if i % pp_span == 1:
                 t1 = time.time()
                 print "\tAverage loss: %.12f" % (pp_loss /
                                                  float(pp_span * mini_batch)),
@@ -88,13 +94,19 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                 p_grads, _ = ret.get()
                 for k in p_grads.keys():
                     if k in grads:
-                        for idx_g in range(len(grads[k])):
-                            grads[k][idx_g] += p_grads[k][idx_g]
+                        if isinstance(grads[k], list):
+                            for idx_g in range(len(grads[k])):
+                                grads[k][idx_g] += p_grads[k][idx_g]
+                        else:
+                            grads[k] += p_grads[k]
                     else:
                         grads[k] = p_grads[k]
             for k in grads.keys():
-                for idx_g in range(len(grads[k])):
-                    grads[k][idx_g] /= rest_num
+                if isinstance(grads[k], list):
+                    for idx_g in range(len(grads[k])):
+                        grads[k][idx_g] /= rest_num
+                else:
+                    grads[k] /= rest_num
             ECF.All_params_SGD(params, grads, lr, cl, mode=mode,
                                grad_acc=grad_acc, momentum=momentum)
         valid_loss = Calculate_loss_multiprocess(params, valid_list, csv_dir,
@@ -163,29 +175,33 @@ def Load_pair(csv_dir, pair):
 
 
 if __name__ == "__main__":
-    pkl_name = r"train_valid_list.pkl"
-    csv_dir = r"D:\IEMOCAP_full_release\emobase"
-    save_dir = r"pool3_max"     # pool_len = 3, max_pooling
+    # pkl_name = r"train_valid_list_5emo1.pkl"
+    # csv_dir = r"D:\IEMOCAP_full_release\emobase"
+    # save_dir = r"pool3_max"     # pool_len = 3, max_pooling
+    pkl_name = r"train_valid_list_5emo1.pkl"
+    csv_dir = r"/home/lau/IEMOCAP_full_release/emobase"
+    save_dir = r"hidden-100-100_kmax-3_full-100"     # pool_len = 3, max_pooling
 
-    mode = "ada"
-    learn_rate = 0.1
+    mode = "adaautocoor"
+    learn_rate = 0.05
     cln = 0
     momentum = 0.90
     epoches = 100
     lr_ht = 0
-    batch_size = 20
-    process_num = 20
+    batch_size = 80
+    process_num = 8
 
     kmax_pool = [3]
     lmax_pool = [3, False]
     act = "tanh"
+    # act = "relu"
 
     pkl = open(pkl_name, "rb")
     train_pairs = cPickle.load(pkl)
     valid_pairs = cPickle.load(pkl)
     pkl.close()
     # hidden_size_list = [50, 50, 50]
-    hidden_size_list = [100, 100, 100]
+    hidden_size_list = [100, 100]
     in_dim = 30     # consistent with csv column
     out_dim = 100
     params, grad_acc = ECF.Construct_net(hidden_size_list, in_dim, out_dim, kmax_pool,

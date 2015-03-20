@@ -276,7 +276,7 @@ def Extract_feature(params, in_seq):
                                       lower_acts)
         lower_acts = ret[0]
     pooled_vec = Pool_feed_forward_single(params, lower_acts)
-    ret_vec = Full_feed_forward_single(params["out"], pooled_vec, params["act"])
+    ret_vec, _ = Full_feed_forward_single(params["out"], pooled_vec, params["act"])
     return ret_vec
 
 

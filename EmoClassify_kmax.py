@@ -187,7 +187,7 @@ def Extract_feature(params, in_seq):
         ret = EC.Bi_LSTM_feed_forward(params[f_layer_name], params[b_layer_name],
                                       lower_acts)
         lower_acts = ret[0]
-    feature_vec = KMax_pool_feed_forward_single(lower_acts, params["k"])
+    feature_vec, _ = KMax_pool_feed_forward_single(lower_acts, params["k"])
     return feature_vec
 
 

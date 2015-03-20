@@ -57,7 +57,7 @@ def output_arff(data_dic, csv_dir, arff_name, selected_emo=[]):
             arr = np.loadtxt(csv, delimiter=";", skiprows=1)
             dim = arr.shape[1]
             sample = [arr[i].reshape(dim, 1) for i in range(arr.shape[0])]
-            vec = EC.Extract_feature(params, sample)
+            vec = Extract_feature(params, sample)
             if not printed:
                 print_header(arff, vec.shape[0], selected_emo)
                 str_format = "%.6f," * vec.shape[0] + "%s"
@@ -111,7 +111,7 @@ def calculate_error(emo_vec, avg_vec):
 
 if __name__ == "__main__":
     test_dic_n = "dic_5emo1.pkl"
-    name = "hidden-100-100-100_lmax-3_epoch-6"
+    name = "hidden-100-100_lmax-3_full-100_epoch-1"
     params_n = os.path.join("save_params", name + ".pkl")
     train_arff_n = name + "_train_emo_feature.arff"
     test_arff_n = name + "_test_emo_feature.arff"
