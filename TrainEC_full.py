@@ -13,13 +13,13 @@ from random import shuffle
 def Load_Feed(csv_dir, pair, params, mode=0):
     sample = Load_pair(csv_dir, pair)
     if mode == 0:
-        grads, loss = ECF.Feed_forward_backward(params, sample[0], sample[1],
-                                                sample[2])
-        return grads, loss
+        grads, loss, cos = ECF.Feed_forward_backward(params, sample[0], sample[1],
+                                                     sample[2])
+        return grads, loss, cos
     else:
-        loss = ECF.Feed_forward_backward(params, sample[0], sample[1], sample[2],
-                                         mode)
-        return loss
+        loss, cos = ECF.Feed_forward_backward(params, sample[0], sample[1], sample[2],
+                                              mode)
+        return loss, cos
 
 
 def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
@@ -40,6 +40,10 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
         print "Start training epoch %d" % train_epoch
         t0 = time.time()
         pp_loss = 0
+        pos_loss = 0
+        pos_cnt = 0
+        pos_cos = 0
+        neg_cos = 0
         for i in range(len(train_list) / mini_batch):
             grads = defaultdict(list)
             pool = multiprocessing.Pool(processes=process_num)
@@ -50,9 +54,16 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                                                             params)))
             pool.close()
             pool.join()
-            for ret in results:
-                p_grads, loss = ret.get()
+            for j, ret in enumerate(results):
+                p_grads, loss, cos = ret.get()
                 pp_loss += loss
+                is_pos = train_list[i * mini_batch + j][-1]
+                if is_pos:
+                    pos_loss += loss
+                    pos_cnt += 1
+                    pos_cos += cos
+                else:
+                    neg_cos += cos
                 for k in p_grads.keys():
                     if k in grads:
                         if isinstance(grads[k], list):
@@ -72,12 +83,21 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                                grad_acc=grad_acc, momentum=momentum)
             if i % pp_span == 1:
                 t1 = time.time()
-                print "\tAverage loss: %.12f" % (pp_loss /
-                                                 float(pp_span * mini_batch)),
-                print "\tsamples per sec %.2f" % (pp_span * mini_batch /
-                                                  float(t1 - t0))
+                neg_loss = pp_loss - pos_loss
+                neg_cnt = pp_span * mini_batch - pos_cnt
+                print "    Average loss: %.6f, Pos loss: %.6f, Neg loss: %.6f" % \
+                      (pp_loss / float(pp_span * mini_batch), pos_loss / float(pos_cnt),
+                       neg_loss / float(neg_cnt))
+                print "                            Pos cos:  %.6f, Neg cos:  %.6f" % \
+                      (pos_cos / float(pos_cnt), neg_cos / float(neg_cnt))
+                print "    samples per sec %.2f" % (pp_span * mini_batch /
+                                                    float(t1 - t0))
                 t0 = t1
                 pp_loss = 0
+                pos_loss = 0
+                pos_cnt = 0
+                pos_cos = 0
+                neg_cos = 0
         rest_num = len(train_list) - (len(train_list) / mini_batch * mini_batch)
         if rest_num > 0:
             pool = multiprocessing.Pool(processes=process_num)
@@ -91,7 +111,7 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
             pool.close()
             pool.join()
             for ret in results:
-                p_grads, _ = ret.get()
+                p_grads, _, _ = ret.get()
                 for k in p_grads.keys():
                     if k in grads:
                         if isinstance(grads[k], list):
@@ -109,9 +129,13 @@ def Train_multiprocess(params, grad_acc, train_list, valid_list, csv_dir,
                     grads[k] /= rest_num
             ECF.All_params_SGD(params, grads, lr, cl, mode=mode,
                                grad_acc=grad_acc, momentum=momentum)
-        valid_loss = Calculate_loss_multiprocess(params, valid_list, csv_dir,
-                                                 mini_batch, process_num)
-        print "Epoch %d \t Average valid loss: %.12f" % (train_epoch, valid_loss)
+        valid_loss, pos_loss, pos_cos, neg_loss, neg_cos = \
+            Calculate_loss_multiprocess(params, valid_list, csv_dir,
+                                        mini_batch, process_num)
+        print "Epoch %d      Average valid loss: %.6f, Pos loss: %.6f, Neg loss: %.6f" % \
+              (train_epoch, valid_loss, pos_loss, neg_loss)
+        print "                                             Pos cos:  %.6f, Neg cos:  %.6f" % \
+              (pos_cos, neg_cos)
         Save_params(params, save_dir, train_epoch)
         if valid_loss > best_epoch_loss and ht < lr_halve_times:
             lr /= 2
@@ -133,6 +157,10 @@ def Save_params(params, dir, epoch):
 def Calculate_loss_multiprocess(params, valid_list, csv_dir, mini_batch,
                                 process_num):
     total_loss = 0
+    pos_loss = 0
+    pos_cnt = 0
+    pos_cos = 0
+    neg_cos = 0
     for i in range(len(valid_list) / mini_batch):
         results = []
         pool = multiprocessing.Pool(processes=process_num)
@@ -142,8 +170,16 @@ def Calculate_loss_multiprocess(params, valid_list, csv_dir, mini_batch,
                                                         1)))  # mode=1
         pool.close()
         pool.join()
-        for loss in results:
-            total_loss += loss.get()
+        for j, loss in enumerate(results):
+            loss, cos = loss.get()
+            total_loss += loss
+            is_pos = valid_list[i * mini_batch + j][-1]
+            if is_pos:
+                pos_loss += loss
+                pos_cnt += 1
+                pos_cos += cos
+            else:
+                neg_cos += cos
     rest_num = len(valid_list) - len(valid_list) / mini_batch * mini_batch
     if rest_num > 0:
         pool = multiprocessing.Pool(processes=process_num)
@@ -155,9 +191,19 @@ def Calculate_loss_multiprocess(params, valid_list, csv_dir, mini_batch,
                                                         1)))  # mode=1
         pool.close()
         pool.join()
-        for loss in results:
-            total_loss += loss.get()
-    return total_loss / len(valid_list)
+        for i, loss in enumerate(results):
+            loss, cos = loss.get()
+            total_loss += loss
+            is_pos = valid_list[len(valid_list) / mini_batch * mini_batch + i][-1]
+            if is_pos:
+                pos_loss += loss
+                pos_cnt += 1
+                pos_cos += cos
+            else:
+                neg_cos += cos
+    return (total_loss / len(valid_list), pos_loss / float(pos_cnt), pos_cos / float(pos_cnt),
+            (total_loss - pos_loss) / float(len(valid_list) - pos_cnt),
+            neg_cos / float(len(valid_list) - pos_cnt))
 
 
 def Load_pair(csv_dir, pair):
@@ -175,12 +221,12 @@ def Load_pair(csv_dir, pair):
 
 
 if __name__ == "__main__":
-    # pkl_name = r"train_valid_list_5emo1.pkl"
-    # csv_dir = r"D:\IEMOCAP_full_release\emobase"
-    # save_dir = r"pool3_max"     # pool_len = 3, max_pooling
     pkl_name = r"train_valid_list_5emo1.pkl"
-    csv_dir = r"/home/lau/IEMOCAP_full_release/emobase"
-    save_dir = r"hidden-100-100_kmax-3_full-100"     # pool_len = 3, max_pooling
+    csv_dir = r"D:\IEMOCAP_full_release\emobase"
+    save_dir = r"pool3_max"     # pool_len = 3, max_pooling
+    # pkl_name = r"train_valid_list_5emo1.pkl"
+    # csv_dir = r"/home/lau/IEMOCAP_full_release/emobase"
+    # save_dir = r"hidden-100-100_kmax-3_full-100"     # pool_len = 3, max_pooling
 
     mode = "adaautocoor"
     learn_rate = 0.05
@@ -189,7 +235,7 @@ if __name__ == "__main__":
     epoches = 100
     lr_ht = 0
     batch_size = 80
-    process_num = 8
+    process_num = 1
 
     kmax_pool = [3]
     lmax_pool = [3, False]
@@ -206,6 +252,10 @@ if __name__ == "__main__":
     out_dim = 100
     params, grad_acc = ECF.Construct_net(hidden_size_list, in_dim, out_dim, kmax_pool,
                                          act, sgd_mode=mode)
+    # params_n = "save_params\hidden-100-100-100_kmax-3_epoch-6.pkl"
+    # params_f = open(params_n, "rb")
+    # params = cPickle.load(params_f)
+    # params_f.close()
     print "Start Training"
     Train_multiprocess(params, grad_acc, train_pairs, valid_pairs, csv_dir, save_dir,
                        lr=learn_rate, epoches=epoches, lr_halve_times=lr_ht,

@@ -64,12 +64,12 @@ def Out_feed_forward_backward_kmax(weights, in_seq_1, in_seq_2, is_pos, k,
     v_1, v_2, max_idx_1, max_idx_2 = ECK.KMax_pool_feed_forward(in_seq_1,
                                                                 in_seq_2, k)
     fv_1, fv_2, finter_1, finter_2 = Full_feed_forward(weights, v_1, v_2, act)
-    loss, Dl_1, Dl_2 = EC.Cos_feed_forward_backward(fv_1, fv_2, is_pos)
+    loss, Dl_1, Dl_2, cos = EC.Cos_feed_forward_backward(fv_1, fv_2, is_pos)
     Dg, Dl_full_1, Dl_full_2 = Full_feed_backward(weights, Dl_1, Dl_2, finter_1,
                                                   finter_2)
     Dl_pool_1, Dl_pool_2 = ECK.KMax_pool_feed_backward(Dl_full_1, Dl_full_2, ts_1, ts_2,
                                                        max_idx_1, max_idx_2, k)
-    return loss, Dg, Dl_pool_1, Dl_pool_2
+    return loss, Dg, Dl_pool_1, Dl_pool_2, cos
 
 
 def Feed_forward_backward_kmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
@@ -91,11 +91,11 @@ def Feed_forward_backward_kmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
         inter_vals[b_layer_name + "s2"] = ret_2[2]
         lower_acts_1 = ret_1[0]
         lower_acts_2 = ret_2[0]
-    loss, Dg, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward_kmax(
+    loss, Dg, Dl_out_s1, Dl_out_s2, cos = Out_feed_forward_backward_kmax(
         params["out"], lower_acts_1, lower_acts_2, is_pos, params["k"],
         params["act"])
     if mode == 1:
-        return loss
+        return loss, cos
     grads["out"] = Dg
     in_err_1 = Dl_out_s1
     in_err_2 = Dl_out_s2
@@ -114,7 +114,7 @@ def Feed_forward_backward_kmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
         grads[b_layer_name] = [x + y for (x, y) in zip(ret_1[1], ret_2[1])]
         in_err_1 = ret_1[2]
         in_err_2 = ret_2[2]
-    return grads, loss
+    return grads, loss, cos
 
 
 def Out_feed_forward_backward_lmax(weights, in_seq_1, in_seq_2, is_pos, pool_len,
@@ -124,13 +124,13 @@ def Out_feed_forward_backward_lmax(weights, in_seq_1, in_seq_2, is_pos, pool_len
     v_1, v_2, max_idx_1, max_idx_2 = EC.Pool_feed_forward(in_seq_1, in_seq_2,
                                                           pool_len, average)
     fv_1, fv_2, finter_1, finter_2 = Full_feed_forward(weights, v_1, v_2, act)
-    loss, Dl_1, Dl_2 = EC.Cos_feed_forward_backward(fv_1, fv_2, is_pos)
+    loss, Dl_1, Dl_2, cos = EC.Cos_feed_forward_backward(fv_1, fv_2, is_pos)
     Dg, Dl_full_1, Dl_full_2 = Full_feed_backward(weights, Dl_1, Dl_2, finter_1,
                                                   finter_2)
     Dl_pool_1, Dl_pool_2 = EC.Pool_feed_backward(Dl_full_1, Dl_full_2, ts_1,
                                                  ts_2, max_idx_1, max_idx_2,
                                                  pool_len, average)
-    return loss, Dg, Dl_pool_1, Dl_pool_2
+    return loss, Dg, Dl_pool_1, Dl_pool_2, cos
 
 
 def Feed_forward_backward_lmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
@@ -152,11 +152,11 @@ def Feed_forward_backward_lmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
         inter_vals[b_layer_name + "s2"] = ret_2[2]
         lower_acts_1 = ret_1[0]
         lower_acts_2 = ret_2[0]
-    loss, Dg, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward_lmax(
+    loss, Dg, Dl_out_s1, Dl_out_s2, cos = Out_feed_forward_backward_lmax(
         params["out"], lower_acts_1, lower_acts_2, is_pos, params["pool_len"],
         params["average"], params["act"])
     if mode == 1:
-        return loss
+        return loss, cos
     grads["out"] = Dg
     in_err_1 = Dl_out_s1
     in_err_2 = Dl_out_s2
@@ -175,7 +175,7 @@ def Feed_forward_backward_lmax(params, in_seq_1, in_seq_2, is_pos, mode=0):
         grads[b_layer_name] = [x + y for (x, y) in zip(ret_1[1], ret_2[1])]
         in_err_1 = ret_1[2]
         in_err_2 = ret_2[2]
-    return grads, loss
+    return grads, loss, cos
 
 
 def Construct_net(hidden_size_list, in_size, out_dim, pool_mode, act,

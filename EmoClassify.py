@@ -153,7 +153,7 @@ def Cos_feed_forward_backward(vec_1, vec_2, is_posative):
         loss = cos * cos
         Dl_1 = 2 * cos * DCos_1
         Dl_2 = 2 * cos * DCos_2
-    return loss, Dl_1, Dl_2
+    return loss, Dl_1, Dl_2, cos
 
 
 def Out_feed_forward_backward(in_seq_1, in_seq_2, is_pos, pool_len=0, average=False):
@@ -161,10 +161,10 @@ def Out_feed_forward_backward(in_seq_1, in_seq_2, is_pos, pool_len=0, average=Fa
     ts_2 = len(in_seq_2)
     v_1, v_2, max_idx_1, max_idx_2 = Pool_feed_forward(in_seq_1, in_seq_2,
                                                        pool_len, average)
-    loss, Dl_1, Dl_2 = Cos_feed_forward_backward(v_1, v_2, is_pos)
+    loss, Dl_1, Dl_2, cos = Cos_feed_forward_backward(v_1, v_2, is_pos)
     Dl_pool_1, Dl_pool_2 = Pool_feed_backward(Dl_1, Dl_2, ts_1, ts_2, max_idx_1,
                                               max_idx_2, pool_len, average)
-    return loss, Dl_pool_1, Dl_pool_2
+    return loss, Dl_pool_1, Dl_pool_2, cos
 
 
 def Bi_Collapse_forward(forward_acts, backward_acts):
@@ -314,11 +314,11 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
         inter_vals[b_layer_name + "s2"] = ret_2[2]
         lower_acts_1 = ret_1[0]
         lower_acts_2 = ret_2[0]
-    loss, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
-                                                           is_pos, params["pool_len"],
-                                                           params["average"])
+    loss, Dl_out_s1, Dl_out_s2, cos = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
+                                                                is_pos, params["pool_len"],
+                                                                params["average"])
     if mode == 1:
-        return loss
+        return loss, cos
     in_err_1 = Dl_out_s1
     in_err_2 = Dl_out_s2
     for i in reversed(range(params["num_layers"])):
@@ -336,7 +336,7 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
         grads[b_layer_name] = [x + y for (x, y) in zip(ret_1[1], ret_2[1])]
         in_err_1 = ret_1[2]
         in_err_2 = ret_2[2]
-    return grads, loss
+    return grads, loss, cos
 
 
 def All_params_SGD(params, grads, learn_rate=0.1, clip_norm=5, mode="ada",

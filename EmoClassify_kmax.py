@@ -59,10 +59,10 @@ def Out_feed_forward_backward(in_seq_1, in_seq_2, is_pos, k):
     ts_2 = len(in_seq_2)
     v_1, v_2, max_idx_1, max_idx_2 = KMax_pool_feed_forward(in_seq_1, in_seq_2,
                                                             k)
-    loss, Dl_1, Dl_2 = EC.Cos_feed_forward_backward(v_1, v_2, is_pos)
+    loss, Dl_1, Dl_2, cos = EC.Cos_feed_forward_backward(v_1, v_2, is_pos)
     Dl_pool_1, Dl_pool_2 = KMax_pool_feed_backward(Dl_1, Dl_2, ts_1, ts_2,
                                                    max_idx_1, max_idx_2, k)
-    return loss, Dl_pool_1, Dl_pool_2
+    return loss, Dl_pool_1, Dl_pool_2, cos
 
 
 def Construct_net(hidden_size_list, in_size, k, init_range=0.1,
@@ -155,10 +155,10 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
         inter_vals[b_layer_name + "s2"] = ret_2[2]
         lower_acts_1 = ret_1[0]
         lower_acts_2 = ret_2[0]
-    loss, Dl_out_s1, Dl_out_s2 = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
+    loss, Dl_out_s1, Dl_out_s2, cos = Out_feed_forward_backward(lower_acts_1, lower_acts_2,
                                                                 is_pos, params["k"])
     if mode == 1:
-        return loss
+        return loss, cos
     in_err_1 = Dl_out_s1
     in_err_2 = Dl_out_s2
     for i in reversed(range(params["num_layers"])):
@@ -176,7 +176,7 @@ def Feed_forward_backward(params, in_seq_1, in_seq_2, is_pos, mode=0):
         grads[b_layer_name] = [x + y for (x, y) in zip(ret_1[1], ret_2[1])]
         in_err_1 = ret_1[2]
         in_err_2 = ret_2[2]
-    return grads, loss
+    return grads, loss, cos
 
 
 def Extract_feature(params, in_seq):
