@@ -60,6 +60,7 @@ if check_Generage:
     gen = STS.Generate(params, in_vocab)
 
 
+
 if check_Beamsearch:
     em_time_steps = 11
     lm_time_steps = 9
