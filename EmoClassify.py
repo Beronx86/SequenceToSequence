@@ -150,9 +150,12 @@ def Cos_feed_forward_backward(vec_1, vec_2, is_posative):
         Dl_1 = -0.5 * DCos_1
         Dl_2 = -0.5 * DCos_2
     else:
-        loss = cos * cos
-        Dl_1 = 2 * cos * DCos_1
-        Dl_2 = 2 * cos * DCos_2
+        # loss = cos * cos
+        # Dl_1 = 2 * cos * DCos_1
+        # Dl_2 = 2 * cos * DCos_2
+        loss = 0.25 * cos * cos
+        Dl_1 = 0.5 * cos * DCos_1
+        Dl_2 = 0.5 * cos * DCos_2        
     return loss, Dl_1, Dl_2, cos
 
 
