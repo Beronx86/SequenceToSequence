@@ -234,13 +234,13 @@ if __name__ == "__main__":
     momentum = 0.90
     epoches = 100
     lr_ht = 0
-    batch_size = 80
-    process_num = 1
+    batch_size = 50
+    process_num = 5
 
     kmax_pool = [3]
     lmax_pool = [3, False]
-    act = "tanh"
-    # act = "relu"
+    # act = "tanh"
+    act = "relu"
 
     pkl = open(pkl_name, "rb")
     train_pairs = cPickle.load(pkl)

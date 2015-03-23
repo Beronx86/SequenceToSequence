@@ -141,6 +141,10 @@ def Cos_feed_forward_backward(vec_1, vec_2, is_posative):
     vec_1_norm = math.sqrt(vec_1_pow)
     vec_2_norm = math.sqrt(vec_2_pow)
     vec_1_2_p = vec_1.dot(vec_2)
+    if vec_1_norm == 0 or vec_2_norm == 0:
+        print "vec_1_norm: %.6f\tvec_2_norm: %.6f" % (vec_1_norm, vec_2_norm)
+        return 0, np.zeros(vec_1.shape, dtype=real), \
+               np.zeros(vec_2.shape, dtype=real), 0
     cos = vec_1_2_p / (vec_1_norm * vec_2_norm)
     # cos2 = 1 - cosine(vec_1, vec_2)
     DCos_1 = vec_2 / (vec_1_norm * vec_2_norm) - vec_1 * cos / vec_1_pow

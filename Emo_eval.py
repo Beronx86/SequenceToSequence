@@ -111,7 +111,7 @@ def calculate_error(emo_vec, avg_vec):
 
 if __name__ == "__main__":
     test_dic_n = "dic_5emo1.pkl"
-    name = "hidden-100-100_lmax-3_full-100_epoch-1"
+    name = "hidden-100-100_kmax-3_full-100_coscos"
     params_n = os.path.join("save_params", name + ".pkl")
     train_arff_n = name + "_train_emo_feature.arff"
     test_arff_n = name + "_test_emo_feature.arff"

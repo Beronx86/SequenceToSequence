@@ -22,6 +22,14 @@ def Generate_ABXlist(test_emo, train_emo, emo_dic, num):
     A = train_emo_l[:num]
     return A, B, X
 
+def Generate_ABXlist_2(test_emo, train_emo, emo_dic, num):
+    rest_emo_l = emo_dic["fru"]
+    X = rest_emo_l[:num]
+    B = rest_emo_l[num:2 * num]
+    train_emo_l = emo_dic["sad"]
+    A = train_emo_l[:num]
+    return A, B, X
+
 
 def Load_csv(csv_dir, name_tuple):
     csv = os.path.join(csv_dir, ("Session%d" % name_tuple[0]), name_tuple[1],
@@ -32,9 +40,11 @@ def Load_csv(csv_dir, name_tuple):
     return sample
 
 
-def Eval_list(ABX_list, csv_dir, params, ext_mode):
+def Eval_list(ABX_list, csv_dir, params):
     total_cnt = len(ABX_list[0])
     right_cnt = 0
+    total_AX = 0
+    total_BX = 0
     for A, B, X in zip(ABX_list[0], ABX_list[1], ABX_list[2]):
         seq_A = Load_csv(csv_dir, A)
         seq_B = Load_csv(csv_dir, B)
@@ -44,9 +54,13 @@ def Eval_list(ABX_list, csv_dir, params, ext_mode):
         vec_X = EE.Extract_feature(params, seq_X)
         cos_AX = 1 - cosine(vec_A, vec_X)
         cos_BX = 1 - cosine(vec_B, vec_X)
+        total_AX += cos_AX
+        total_BX += cos_BX
         if cos_BX > cos_AX:
             right_cnt += 1
-    return right_cnt / float(total_cnt)
+    return right_cnt / float(total_cnt), total_AX / len(ABX_list[0]),\
+           total_BX / len(ABX_list[0])
+
 
 
 def cosine_2(vec_1, vec_2):
@@ -62,21 +76,21 @@ def cosine_2(vec_1, vec_2):
 if __name__ == '__main__':
     csv_dir = r"D:\IEMOCAP_full_release\emobase"
     num = 400
-    params_n = r"save_params\hidden100-100-100_lmax3_params_epoch9.pkl"
-    ext_mode = "lmax"
+    params_n = r"save_params\hidden-100-100_kmax-3_full-100.pkl"
     test_emo = r"hap"
     train_emo = ["neu", "sad", "fru", "exc", "ang"]
     # train_emo = ["neu", "sad", "fru", "exc", "hap"]
-    emo_dic_n = r"dic.pkl"
+    emo_dic_n = r"dic_5emo1.pkl"
     emo_dic_f = open(emo_dic_n, 'rb')
     emo_dic = cPickle.load(emo_dic_f)
     emo_dic_f.close()
     params_f = open(params_n, "rb")
     params = cPickle.load(params_f)
     params_f.close()
-    ABX_list = Generate_ABXlist(test_emo, train_emo, emo_dic, num)
-    ABX_accuracy = Eval_list(ABX_list, csv_dir, params, ext_mode)
+    ABX_list = Generate_ABXlist_2(test_emo, train_emo, emo_dic, num)
+    ABX_accuracy, avg_ax, avg_bx = Eval_list(ABX_list, csv_dir, params)
     print "%s accuracy %f" % (test_emo, ABX_accuracy)
+    print avg_ax, avg_bx
     # A = emo_dic["neu"][8]
     # B = emo_dic["ang"][0]
     # X = emo_dic["neu"][5]
